@@ -16,10 +16,11 @@ proc main1 {} {
     set conf(n_countries) 4
     set conf(n_divisions_per_country) 3
     set conf(n_teams_per_division) 16
-    set conf(n_players_per_team) 22
+    set conf(n_players_per_team) 11
     set conf(date_start) 0
-    set conf(date_end) [expr {$conf(date_start) + $n_seconds_per_year * 1}]
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
+    set conf(date_end) \
+        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 1}]
 
     set fp [open "main.sql" r]
     set db_schema_sql [read $fp]
@@ -164,6 +165,13 @@ proc main1 {} {
                         values
                         ($player_id, $player_name, $player_ability)
                     }
+                    set playerteam_id [new_id]
+                    db eval {
+                        insert into playerteam
+                        (id, player_id, team_id, date_from, date_to)
+                        values
+                        ($playerteam_id, $player_id, $team_id, $season_start, NULL)
+                    }
                 }
             }
         }
@@ -172,7 +180,7 @@ proc main1 {} {
     set current_date $conf(date_start)
     while {$current_date < $conf(date_end)} {
         if {$current_date % $n_seconds_per_year == $conf(season_start_year_offset)} {
-            # Schedule year
+            # Schedule season
             db eval {
                 select *
                 from division
@@ -181,13 +189,13 @@ proc main1 {} {
                 set division_id $id
                 set team_ids [list]
                 db eval {
-                    select *
+                    select team.id team_id
                     from team
                     join teamdivision td on td.team_id = team.id
                     where td.division_id = $division_id
                     and season_start = $current_date
                 } {
-                    lappend team_ids $id
+                    lappend team_ids $team_id
                 }
                 set schedule [gen_round_robin [llength $team_ids] 2]
                 set dayd $current_date
@@ -210,6 +218,25 @@ proc main1 {} {
                     }
                     set dayd [expr {$dayd + $n_seconds_per_week}]
                 }
+            }
+        }
+# Find matches scheduled for today.
+        db eval {
+            select *
+            from match
+            where date = $current_date
+        } {
+# Find total ability and calculate scores and save them.
+            db eval {
+                select count(*) n
+                from team
+                join playerteam pt on pt.team_id = team.id
+                join player p on p.id = pt.player_id
+                where team.id = $team1_id
+                and pt.date_from <= $current_date
+                and (pt.date_to is null or pt.date_to > $current_date)
+            } {
+                puts $n
             }
         }
         set current_date [expr {$current_date + $n_seconds_per_day}]
