@@ -1,25 +1,38 @@
-create table if not exists country(
+create table country(
     id integer primary key,
     name
 );
 
-create table if not exists division(
+create table division(
     id integer primary key,
     rank,
     country_id
 );
 
-create table if not exists team(
+create table team(
     id integer primary key,
-    name,
-    division_id
+    name
 );
 
-create table if not exists match(
+create table teamdivision(
+    id integer primary key,
+    team_id,
+    division_id,
+    season_start
+);
+
+create table player(
+    id integer primary key,
+    name,
+    ability,
+    team_id
+);
+
+create table match(
     id integer primary key,
     date,
     team1_id,
     team2_id,
-    result_1,
-    result_2
+    score_team1,
+    score_team2
 );

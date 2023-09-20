@@ -1,7 +1,7 @@
 #!/usr/bin/tclsh
 package require sqlite3
 
-proc main {} {
+proc main1 {} {
     set n_seconds_per_hour 3600
     set n_seconds_per_day [expr $n_seconds_per_hour * 24]
     set n_seconds_per_week [expr $n_seconds_per_day * 7]
@@ -18,8 +18,6 @@ proc main {} {
     set fp [open "main.sql" r]
     set db_schema_sql [read $fp]
     close $fp
-
-    sqlite3 db :memory:
 
     db eval $db_schema_sql
 
@@ -133,9 +131,21 @@ proc main {} {
             for {set k 1} {$k <= $conf(n_teams_per_division)} {incr k} {
                 set team_id [new_id]
                 set team_name "team_${i}_${division_rank}_$k"
+                set team_division_id [new_id]
                 db eval {
-                    insert into team (id, name, division_id) values
-                    ($team_id, $team_name, $division_id)
+                    insert into team
+                    (id, name)
+                    values
+                    ($team_id, $team_name)
+                }
+                set season_start \
+                    [expr {$conf(date_start) + $conf(season_start_year_offset)}]
+                set foo "bar"
+                db eval {
+                    insert into teamdivision
+                    (id, team_id, division_id, season_start)
+                    values
+                    ($team_division_id, $team_id, $division_id, $season_start)
                 }
             }
         }
@@ -155,18 +165,45 @@ proc main {} {
                 db eval {
                     select *
                     from team
-                    where division_id = $division_id
+                    join teamdivision td on td.team_id = team.id
+                    where td.division_id = $division_id
+                    and season_start = $current_date
                 } {
                     lappend team_ids $id
                 }
-                puts $team_ids
                 set schedule [gen_round_robin [llength $team_ids] 2]
+                set dayd $current_date
+                foreach dayl $schedule {
+                    foreach matchl $dayl {
+                        set match_id [new_id]
+                        set team1_id [lindex $team_ids [lindex $matchl 0]]
+                        set team2_id [lindex $team_ids [lindex $matchl 1]]
+                        db eval {
+                            insert into match
+                            (id, date, team1_id, team2_id)
+                            values
+                            (
+                                $match_id,
+                                $dayd,
+                                $team1_id,
+                                $team2_id
+                            )
+                        }
+                    }
+                    set dayd [expr {$dayd + $n_seconds_per_week}]
+                }
             }
         }
         set current_date [expr {$current_date + $n_seconds_per_day}]
     }
-
-    db close
 }
 
-main
+proc main2 {} {
+    #sqlite3 db :memory:
+    sqlite3 db "sportsim2.db"
+    db transaction {
+        main1
+    }
+}
+
+main2
