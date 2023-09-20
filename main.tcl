@@ -1,12 +1,19 @@
 #!/usr/bin/tclsh
 package require sqlite3
 
-set conf(n_countries) 4
-set conf(n_divisions_per_country) 3
-set conf(n_teams_per_division) 16
-
 proc main {} {
-    global conf
+    set n_seconds_per_hour 3600
+    set n_seconds_per_day [expr $n_seconds_per_hour * 24]
+    set n_seconds_per_week [expr $n_seconds_per_day * 7]
+    set n_seconds_per_month [expr $n_seconds_per_day * 30]
+    set n_seconds_per_year [expr $n_seconds_per_month * 12]
+
+    set conf(n_countries) 4
+    set conf(n_divisions_per_country) 3
+    set conf(n_teams_per_division) 16
+    set conf(date_start) 0
+    set conf(date_end) [expr {$conf(date_start) + $n_seconds_per_year * 1}]
+    set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
 
     set fp [open "main.sql" r]
     set db_schema_sql [read $fp]
@@ -108,8 +115,6 @@ proc main {} {
         return $r
     }
 
-    puts [gen_round_robin 6 4]
-
 # Generate countries
     for {set i 1} {$i <= $conf(n_countries)} {incr i} {
         set country_id [new_id]
@@ -134,6 +139,31 @@ proc main {} {
                 }
             }
         }
+    }
+
+    set current_date $conf(date_start)
+    while {$current_date < $conf(date_end)} {
+        if {$current_date % $n_seconds_per_year == $conf(season_start_year_offset)} {
+            # Schedule year
+            db eval {
+                select *
+                from division
+                order by country_id, rank
+            } {
+                set division_id $id
+                set team_ids [list]
+                db eval {
+                    select *
+                    from team
+                    where division_id = $division_id
+                } {
+                    lappend team_ids $id
+                }
+                puts $team_ids
+                set schedule [gen_round_robin [llength $team_ids] 2]
+            }
+        }
+        set current_date [expr {$current_date + $n_seconds_per_day}]
     }
 
     db close
