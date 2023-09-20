@@ -24,8 +24,15 @@ create table teamdivision(
 create table player(
     id integer primary key,
     name,
-    ability,
-    team_id
+    ability
+);
+
+create table playerteam(
+    id integer primary key,
+    player_id,
+    team_id,
+    date_from,
+    date_to
 );
 
 create table match(

@@ -1,6 +1,11 @@
 #!/usr/bin/tclsh
 package require sqlite3
 
+proc rand_logistic {loc sc} {
+    set r [expr {rand()}]
+    return [expr {$loc + $sc * log10($r/(1-$r))}]
+}
+
 proc main1 {} {
     set n_seconds_per_hour 3600
     set n_seconds_per_day [expr $n_seconds_per_hour * 24]
@@ -11,6 +16,7 @@ proc main1 {} {
     set conf(n_countries) 4
     set conf(n_divisions_per_country) 3
     set conf(n_teams_per_division) 16
+    set conf(n_players_per_team) 22
     set conf(date_start) 0
     set conf(date_end) [expr {$conf(date_start) + $n_seconds_per_year * 1}]
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
@@ -146,6 +152,18 @@ proc main1 {} {
                     (id, team_id, division_id, season_start)
                     values
                     ($team_division_id, $team_id, $division_id, $season_start)
+                }
+# Generate players
+                for {set iplayer 0} {$iplayer < $conf(n_players_per_team)} {incr iplayer} {
+                    set player_id [new_id]
+                    set player_name $player_id
+                    set player_ability [rand_logistic 0 1]
+                    db eval {
+                        insert into player
+                        (id, name, ability)
+                        values
+                        ($player_id, $player_name, $player_ability)
+                    }
                 }
             }
         }
