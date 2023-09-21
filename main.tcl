@@ -1,6 +1,20 @@
 #!/usr/bin/tclsh
 package require sqlite3
 
+proc logistic_cdf {loc sc x} {
+    return [expr {1/(1 + exp(-($x - $loc) / $sc))}]
+}
+
+proc rand_binomial {p n} {
+    set k 0
+    for {set i 0} {$i < $n} {incr i} {
+        if {rand() < $p} {
+            incr k
+        }
+    }
+    return $k
+}
+
 proc rand_logistic {loc sc} {
     set r [expr {rand()}]
     return [expr {$loc + $sc * log10($r/(1-$r))}]
@@ -172,13 +186,17 @@ proc main1 {} {
                 for {set iplayer 0} {$iplayer < $conf(n_players_per_team)} {incr iplayer} {
                     set player_id [new_id]
                     set player_name $player_id
+# Have a base ability so that there is correlation between att and def
                     set player_ability [rand_logistic 0 1]
-                    set player_velocity [rand_logistic 0 1]
+                    set player_ability_att [rand_logistic $player_ability 1]
+                    set player_ability_def [rand_logistic $player_ability 1]
+                    set player_velocity [expr {exp([rand_logistic 0 1])}]
                     db eval {
                         insert into player
-                        (id, name, ability, velocity)
+                        (id, name, ability_att, ability_def, velocity)
                         values
-                        ($player_id, $player_name, $player_ability, $player_velocity)
+                        ($player_id, $player_name,
+                         $player_ability_att, $player_ability_def, $player_velocity)
                     }
                     set playerteam_id [new_id]
                     db eval {
@@ -242,10 +260,12 @@ proc main1 {} {
             where date = $current_date
         } {
 # Find total ability and calculate scores and save them.
+            set team_data [list]
             foreach team_id [list $team1_id $team2_id] {
                 db eval {
                     select
-                    sum(p.ability) total_ability,
+                    sum(p.ability_att) total_ability_att,
+                    sum(p.ability_def) total_ability_def,
                     sum(p.velocity) total_velocity
                     from team
                     join playerteam pt on pt.team_id = team.id
@@ -253,12 +273,22 @@ proc main1 {} {
                     where team.id = $team_id
                     and pt.date_from <= $current_date
                     and (pt.date_to is null or pt.date_to > $current_date)
-                } {
-# Play match
-                    puts "$team_id $total_ability $total_velocity"
+                } row {
+                    lappend team_data [array get row]
                 }
             }
-            puts ""
+# Play match
+            set att1 [dict get [lindex $team_data 0] total_ability_att]
+            set att2 [dict get [lindex $team_data 1] total_ability_att]
+            set def1 [dict get [lindex $team_data 0] total_ability_def]
+            set def2 [dict get [lindex $team_data 1] total_ability_def]
+            set vel1 [dict get [lindex $team_data 0] total_velocity]
+            set vel2 [dict get [lindex $team_data 1] total_velocity]
+            set p1 [expr {[logistic_cdf 0 1 [expr {$att1 - $def2}]] / 30.}]
+            set p2 [expr {[logistic_cdf 0 1 [expr {$att2 - $def1}]] / 30.}]
+            set n [expr {10./(1./$vel1 + 1./$vel2)}]
+            set score1 [rand_binomial $p1 $n]
+            set score2 [rand_binomial $p2 $n]
         }
         set current_date [expr {$current_date + $n_seconds_per_day}]
     }
