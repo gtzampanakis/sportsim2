@@ -255,7 +255,10 @@ proc main1 {} {
         }
 # Find matches scheduled for today.
         db eval {
-            select *
+            select
+            id as match_id,
+            team1_id,
+            team2_id
             from match
             where date = $current_date
         } {
@@ -284,11 +287,18 @@ proc main1 {} {
             set def2 [dict get [lindex $team_data 1] total_ability_def]
             set vel1 [dict get [lindex $team_data 0] total_velocity]
             set vel2 [dict get [lindex $team_data 1] total_velocity]
-            set p1 [expr {[logistic_cdf 0 1 [expr {$att1 - $def2}]] / 30.}]
-            set p2 [expr {[logistic_cdf 0 1 [expr {$att2 - $def1}]] / 30.}]
-            set n [expr {10./(1./$vel1 + 1./$vel2)}]
+            set p1 [expr {[logistic_cdf 0 1 [expr {$att1 - $def2}]] / 28.}]
+            set p2 [expr {[logistic_cdf 0 1 [expr {$att2 - $def1}]] / 38.}]
+            set n [expr {11.5/(1./$vel1 + 1./$vel2)}]
             set score1 [rand_binomial $p1 $n]
             set score2 [rand_binomial $p2 $n]
+            db eval {
+                update match
+                set
+                score_team1 = $score1,
+                score_team2 = $score2
+                where id = $match_id
+            }
         }
         set current_date [expr {$current_date + $n_seconds_per_day}]
     }
