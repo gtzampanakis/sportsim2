@@ -9,6 +9,12 @@ create table division(
     country_id
 );
 
+create table season(
+    id integer primary key,
+    year,
+    season_start
+);
+
 create table team(
     id integer primary key,
     name
@@ -18,7 +24,7 @@ create table teamdivision(
     id integer primary key,
     team_id,
     division_id,
-    season_start
+    season_id
 );
 
 create table player(

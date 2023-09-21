@@ -173,14 +173,12 @@ proc main1 {} {
                     values
                     ($team_id, $team_name)
                 }
-                set season_start \
-                    [expr {$conf(date_start) + $conf(season_start_year_offset)}]
-                set foo "bar"
+# Leave the season_id as NULL and it will be filled when the first season starts.
                 db eval {
                     insert into teamdivision
-                    (id, team_id, division_id, season_start)
+                    (id, team_id, division_id, season_id)
                     values
-                    ($team_division_id, $team_id, $division_id, $season_start)
+                    ($team_division_id, $team_id, $division_id, NULL)
                 }
 # Generate players
                 for {set iplayer 0} {$iplayer < $conf(n_players_per_team)} {incr iplayer} {
@@ -203,18 +201,51 @@ proc main1 {} {
                         insert into playerteam
                         (id, player_id, team_id, date_from, date_to)
                         values
-                        ($playerteam_id, $player_id, $team_id, $season_start, NULL)
+                        ($playerteam_id, $player_id, $team_id, 0, NULL)
                     }
                 }
             }
         }
     }
 
+    set initialized_teamdivision 0
     set current_date $conf(date_start)
+    set year 0
+    set season_id ""
     while {$current_date < $conf(date_end)} {
         if {$current_date % $n_seconds_per_year == $conf(season_start_year_offset)} {
             # Schedule season
             puts "Scheduling season..."
+            set previous_season_id $season_id
+            set season_id [new_id]
+            incr year
+            db eval {
+                insert into season
+                (id, year, season_start)
+                values
+                ($season_id, $year, $current_date)
+            }
+            if {$initialized_teamdivision == 0} {
+                db eval {
+                    update teamdivision
+                    set season_id = $season_id
+                }
+                incr initialized_teamdivision
+            } else {
+                db eval {
+                    select *
+                    from teamdivision
+                    where season_id = $previous_season_id
+                } row {
+                    set teamdivision_id [new_id]
+                    db eval {
+                        insert into teamdivision
+                        (id, team_id, division_id, season_id)
+                        values
+                        ($teamdivision_id, $row(team_id), $row(division_id), $season_id)
+                    }
+                }
+            }
             db eval {
                 select *
                 from division
@@ -227,7 +258,7 @@ proc main1 {} {
                     from team
                     join teamdivision td on td.team_id = team.id
                     where td.division_id = $division_id
-                    and season_start = $current_date
+                    and td.season_id = $season_id
                 } {
                     lappend team_ids $team_id
                 }
@@ -249,6 +280,7 @@ proc main1 {} {
                                 $team2_id
                             )
                         }
+                        puts "Inserted match"
                     }
                     set dayd [expr {$dayd + $n_seconds_per_week}]
                 }
