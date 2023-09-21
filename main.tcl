@@ -6,6 +6,20 @@ proc rand_logistic {loc sc} {
     return [expr {$loc + $sc * log10($r/(1-$r))}]
 }
 
+proc rand_poisson {loc} {
+	set L [expr {exp(-$loc)}]
+    set k 0
+    set p 1
+    while 1 {
+        incr k
+        set p [expr {$p * rand()}]
+        if {$p <= $L} {
+            break
+        }
+    }
+    return [expr {$k - 1}]
+}
+
 proc main1 {} {
     set n_seconds_per_hour 3600
     set n_seconds_per_day [expr $n_seconds_per_hour * 24]
@@ -159,11 +173,12 @@ proc main1 {} {
                     set player_id [new_id]
                     set player_name $player_id
                     set player_ability [rand_logistic 0 1]
+                    set player_velocity [rand_logistic 0 1]
                     db eval {
                         insert into player
-                        (id, name, ability)
+                        (id, name, ability, velocity)
                         values
-                        ($player_id, $player_name, $player_ability)
+                        ($player_id, $player_name, $player_ability, $player_velocity)
                     }
                     set playerteam_id [new_id]
                     db eval {
@@ -227,17 +242,23 @@ proc main1 {} {
             where date = $current_date
         } {
 # Find total ability and calculate scores and save them.
-            db eval {
-                select count(*) n
-                from team
-                join playerteam pt on pt.team_id = team.id
-                join player p on p.id = pt.player_id
-                where team.id = $team1_id
-                and pt.date_from <= $current_date
-                and (pt.date_to is null or pt.date_to > $current_date)
-            } {
-                puts $n
+            foreach team_id [list $team1_id $team2_id] {
+                db eval {
+                    select
+                    sum(p.ability) total_ability,
+                    sum(p.velocity) total_velocity
+                    from team
+                    join playerteam pt on pt.team_id = team.id
+                    join player p on p.id = pt.player_id
+                    where team.id = $team_id
+                    and pt.date_from <= $current_date
+                    and (pt.date_to is null or pt.date_to > $current_date)
+                } {
+# Play match
+                    puts "$team_id $total_ability $total_velocity"
+                }
             }
+            puts ""
         }
         set current_date [expr {$current_date + $n_seconds_per_day}]
     }

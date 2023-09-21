@@ -24,7 +24,8 @@ create table teamdivision(
 create table player(
     id integer primary key,
     name,
-    ability
+    ability,
+    velocity
 );
 
 create table playerteam(
