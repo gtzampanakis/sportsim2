@@ -41,14 +41,14 @@ proc main1 {} {
     set n_seconds_per_month [expr $n_seconds_per_day * 30]
     set n_seconds_per_year [expr $n_seconds_per_month * 12]
 
-    set conf(n_countries) 4
-    set conf(n_divisions_per_country) 3
+    set conf(n_countries) 1
+    set conf(n_divisions_per_country) 1
     set conf(n_teams_per_division) 16
     set conf(n_players_per_team) 11
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
     set conf(date_end) \
-        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 1}]
+        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 3}]
 
     set fp [open "main.sql" r]
     set db_schema_sql [read $fp]
@@ -214,6 +214,7 @@ proc main1 {} {
     while {$current_date < $conf(date_end)} {
         if {$current_date % $n_seconds_per_year == $conf(season_start_year_offset)} {
             # Schedule season
+            puts "Scheduling season..."
             db eval {
                 select *
                 from division
@@ -300,7 +301,7 @@ proc main1 {} {
                 where id = $match_id
             }
         }
-        set current_date [expr {$current_date + $n_seconds_per_day}]
+        incr current_date $n_seconds_per_day
     }
 }
 
