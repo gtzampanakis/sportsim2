@@ -46,6 +46,8 @@ create table playerteam(
 create table match(
     id integer primary key,
     date,
+    division_id,
+    season_id,
     team1_id,
     team2_id,
     score_team1,

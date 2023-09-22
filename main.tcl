@@ -34,6 +34,60 @@ proc rand_poisson {loc} {
     return [expr {$k - 1}]
 }
 
+proc calc_division_standings {division_id season_id} {
+    set results [list]
+    db eval {
+        select * from (
+            select
+            td.team_id,
+            (
+                select 3 * count(m.id)
+                from match m
+                where m.team1_id = td.team_id
+                and m.division_id = $division_id
+                and m.season_id = $season_id
+                and m.score_team1 > m.score_team2
+            )
+                +
+            (
+                select 1 * count(m.id)
+                from match m
+                where m.team1_id = td.team_id
+                and m.division_id = $division_id
+                and m.season_id = $season_id
+                and m.score_team1 = m.score_team2
+            )
+                +
+            (
+                select 3 * count(m.id)
+                from match m
+                where m.team2_id = td.team_id
+                and m.division_id = $division_id
+                and m.season_id = $season_id
+                and m.score_team2 > m.score_team1
+            )
+                +
+            (
+                select 1 * count(m.id)
+                from match m
+                where m.team2_id = td.team_id
+                and m.division_id = $division_id
+                and m.season_id = $season_id
+                and m.score_team2 = m.score_team1
+            ) points
+            from teamdivision td
+            where 1=1
+            and td.division_id = $division_id
+            and td.season_id = $season_id
+        ) a
+-- TODO: Implement tie-breakers instead of just using the team_id
+        order by a.points desc, a.team_id
+    } row {
+        lappend results [array get row]
+    }
+    return $results
+}
+
 proc main1 {} {
     set n_seconds_per_hour 3600
     set n_seconds_per_day [expr $n_seconds_per_hour * 24]
@@ -41,14 +95,14 @@ proc main1 {} {
     set n_seconds_per_month [expr $n_seconds_per_day * 30]
     set n_seconds_per_year [expr $n_seconds_per_month * 12]
 
-    set conf(n_countries) 1
-    set conf(n_divisions_per_country) 1
+    set conf(n_countries) 2
+    set conf(n_divisions_per_country) 3
     set conf(n_teams_per_division) 16
     set conf(n_players_per_team) 11
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
     set conf(date_end) \
-        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 3}]
+        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 5}]
 
     set fp [open "main.sql" r]
     set db_schema_sql [read $fp]
@@ -208,7 +262,7 @@ proc main1 {} {
         }
     }
 
-    set initialized_teamdivision 0
+    set initialized_teamdivision_records 0
     set current_date $conf(date_start)
     set year 0
     set season_id ""
@@ -225,24 +279,29 @@ proc main1 {} {
                 values
                 ($season_id, $year, $current_date)
             }
-            if {$initialized_teamdivision == 0} {
+            if {$initialized_teamdivision_records == 0} {
                 db eval {
                     update teamdivision
                     set season_id = $season_id
                 }
-                incr initialized_teamdivision
+                incr initialized_teamdivision_records
             } else {
+# Calculate standings and update teamdivision for promotion/relegation.
                 db eval {
-                    select *
-                    from teamdivision
-                    where season_id = $previous_season_id
-                } row {
-                    set teamdivision_id [new_id]
-                    db eval {
-                        insert into teamdivision
-                        (id, team_id, division_id, season_id)
-                        values
-                        ($teamdivision_id, $row(team_id), $row(division_id), $season_id)
+                    select d.rank, nextd.id
+                    from division d
+                    left join division nextd on d.country_id = nextd.country_id and nextd.rank = d.rank + 1
+                    order by d.country_id, d.rank
+                } division_row {
+                    set standings [calc_division_standings $division_row(id) $previous_season_id]
+                    if {$division_row(rank) >= 2} {
+# Promotion.
+                        puts $division_row(rank)
+                        puts $standings
+                        puts ""
+                        foreach standing_dict [lrange $standings 0 2] {
+                            set team_id [dict get $standing_dict team_id]
+                        }
                     }
                 }
             }
@@ -271,16 +330,24 @@ proc main1 {} {
                         set team2_id [lindex $team_ids [lindex $matchl 1]]
                         db eval {
                             insert into match
-                            (id, date, team1_id, team2_id)
+                            (
+                                id,
+                                date,
+                                division_id,
+                                season_id,
+                                team1_id,
+                                team2_id
+                            )
                             values
                             (
                                 $match_id,
                                 $dayd,
+                                $division_id,
+                                $season_id,
                                 $team1_id,
                                 $team2_id
                             )
                         }
-                        puts "Inserted match"
                     }
                     set dayd [expr {$dayd + $n_seconds_per_week}]
                 }
@@ -288,16 +355,13 @@ proc main1 {} {
         }
 # Find matches scheduled for today.
         db eval {
-            select
-            id as match_id,
-            team1_id,
-            team2_id
+            select *
             from match
             where date = $current_date
-        } {
+        } match_row {
 # Find total ability and calculate scores and save them.
             set team_data [list]
-            foreach team_id [list $team1_id $team2_id] {
+            foreach team_id [list $match_row(team1_id) $match_row(team2_id)] {
                 db eval {
                     select
                     sum(p.ability_att) total_ability_att,
@@ -330,7 +394,7 @@ proc main1 {} {
                 set
                 score_team1 = $score1,
                 score_team2 = $score2
-                where id = $match_id
+                where id = $match_row(id)
             }
         }
         incr current_date $n_seconds_per_day
