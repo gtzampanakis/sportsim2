@@ -97,13 +97,21 @@ proc main1 {} {
 
     set conf(n_countries) 1
     set conf(n_divisions_per_country) 3
-    set conf(n_teams_per_division) 10
+    set conf(n_teams_per_division) 8
     set conf(n_players_per_team) 11
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
     set conf(date_end) \
-        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 5}]
+        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 12}]
     set conf(promotion_relegation_enabled) 1
+    set conf(logging_level) 25
+
+    proc log {level msg} {
+        upvar conf conf
+        if {$level >= $conf(logging_level)} {
+            puts $msg
+        }
+    }
 
     set fp [open "main.sql" r]
     set db_schema_sql [read $fp]
@@ -270,10 +278,10 @@ proc main1 {} {
     while {$current_date < $conf(date_end)} {
         if {$current_date % $n_seconds_per_year == $conf(season_start_year_offset)} {
             # Schedule season
-            puts "Scheduling season..."
+            incr year
+            log 50 "Scheduling season $year"
             set previous_season_id $season_id
             set season_id [new_id]
-            incr year
             db eval {
                 insert into season
                 (id, year, season_start)
@@ -393,9 +401,11 @@ proc main1 {} {
         }
 # Find matches scheduled for today.
         db eval {
-            select *
-            from match
-            where date = $current_date
+            select m.*, t1.name t1name, t2.name t2name
+            from match m
+            join team t1 on t1.id = m.team1_id
+            join team t2 on t2.id = m.team2_id
+            where m.date = $current_date
         } match_row {
 # Find total ability and calculate scores and save them.
             set team_data [list]
@@ -434,6 +444,9 @@ proc main1 {} {
                 score_team2 = $score2
                 where id = $match_row(id)
             }
+            log 10 \
+                "Match at $match_row(date):\
+                 $match_row(t1name)-$match_row(t2name) $score1-$score2"
         }
         incr current_date $n_seconds_per_day
     }
