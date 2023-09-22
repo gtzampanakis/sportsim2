@@ -95,9 +95,9 @@ proc main1 {} {
     set n_seconds_per_month [expr $n_seconds_per_day * 30]
     set n_seconds_per_year [expr $n_seconds_per_month * 12]
 
-    set conf(n_countries) 2
+    set conf(n_countries) 1
     set conf(n_divisions_per_country) 3
-    set conf(n_teams_per_division) 16
+    set conf(n_teams_per_division) 10
     set conf(n_players_per_team) 11
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
@@ -386,7 +386,6 @@ proc main1 {} {
                                 $team2_id
                             )
                         }
-                        puts "Inserted match"
                     }
                     set dayd [expr {$dayd + $n_seconds_per_week}]
                 }
