@@ -103,6 +103,7 @@ proc main1 {} {
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
     set conf(date_end) \
         [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 5}]
+    set conf(promotion_relegation_enabled) 1
 
     set fp [open "main.sql" r]
     set db_schema_sql [read $fp]
@@ -288,19 +289,56 @@ proc main1 {} {
             } else {
 # Calculate standings and update teamdivision for promotion/relegation.
                 db eval {
-                    select d.rank, nextd.id
+                    select d.id, d.rank
                     from division d
-                    left join division nextd on d.country_id = nextd.country_id and nextd.rank = d.rank + 1
                     order by d.country_id, d.rank
                 } division_row {
                     set standings [calc_division_standings $division_row(id) $previous_season_id]
-                    if {$division_row(rank) >= 2} {
-# Promotion.
-                        puts $division_row(rank)
-                        puts $standings
-                        puts ""
-                        foreach standing_dict [lrange $standings 0 2] {
-                            set team_id [dict get $standing_dict team_id]
+# Promote top teams
+                    set istanding -1
+                    foreach standing_dict $standings {
+                        incr istanding
+                        set team_id [dict get $standing_dict team_id]
+                        db eval {
+                            insert into teamdivision
+                            (team_id, division_id, season_id)
+                            values
+                            (
+                                $team_id,
+                                (
+                                    select dnew.id
+                                    from division dold
+                                    join division dnew
+                                        on dnew.country_id = dold.country_id
+                                        and dnew.rank = (
+                                            case
+                                                when
+                                                    $conf(promotion_relegation_enabled)
+                                                    and $istanding <= 2
+                                                then
+                                                    case
+                                                        when dold.rank = 1 then dold.rank
+                                                        else dold.rank - 1
+                                                    end
+                                                when
+                                                    $conf(promotion_relegation_enabled)
+                                                    and $istanding
+                                                        >= $conf(n_teams_per_division) - 3
+                                                then
+                                                    case
+                                                        when dold.rank =
+                                                            $conf(n_divisions_per_country)
+                                                        then dold.rank
+                                                        else dold.rank + 1
+                                                    end
+                                                else
+                                                    dold.rank
+                                           end
+                                        )
+                                    where dold.id = $division_row(id)
+                                ),
+                                $season_id
+                            )
                         }
                     }
                 }
@@ -348,6 +386,7 @@ proc main1 {} {
                                 $team2_id
                             )
                         }
+                        puts "Inserted match"
                     }
                     set dayd [expr {$dayd + $n_seconds_per_week}]
                 }
