@@ -1,4 +1,4 @@
-select d.country_id, d.rank, avg(p.ability_att)
+select d.country_id, d.rank, avg(p.ability_att), avg(p.ability_def), avg(p.velocity)
 from teamdivision td
 join division d on d.id = td.division_id
 join team t on t.id = td.team_id

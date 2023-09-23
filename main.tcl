@@ -98,7 +98,8 @@ proc main1 {} {
     set conf(n_countries) 1
     set conf(n_divisions_per_country) 3
     set conf(n_teams_per_division) 8
-    set conf(n_players_per_team) 11
+    set conf(n_players_per_team) 25
+    set conf(n_players_in_match) 11
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
     set conf(date_end) \
@@ -412,15 +413,20 @@ proc main1 {} {
             foreach team_id [list $match_row(team1_id) $match_row(team2_id)] {
                 db eval {
                     select
-                    sum(p.ability_att) total_ability_att,
-                    sum(p.ability_def) total_ability_def,
-                    sum(p.velocity) total_velocity
-                    from team
-                    join playerteam pt on pt.team_id = team.id
-                    join player p on p.id = pt.player_id
-                    where team.id = $team_id
-                    and pt.date_from <= $current_date
-                    and (pt.date_to is null or pt.date_to > $current_date)
+                    sum(sq.ability_att) total_ability_att,
+                    sum(sq.ability_def) total_ability_def,
+                    sum(sq.velocity) total_velocity
+                    from (
+                        select p.*
+                        from team
+                        join playerteam pt on pt.team_id = team.id
+                        join player p on p.id = pt.player_id
+                        where team.id = $team_id
+                        and pt.date_from <= $current_date
+                        and (pt.date_to is null or pt.date_to > $current_date)
+                        order by (p.ability_att + p.ability_def) desc
+                        limit $conf(n_players_in_match)
+                    ) sq
                 } row {
                     lappend team_data [array get row]
                 }
