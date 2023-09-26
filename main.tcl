@@ -1,6 +1,13 @@
 #!/usr/bin/tclsh
 package require sqlite3
 
+set n_seconds_per_hour 3600
+set n_seconds_per_day [expr $n_seconds_per_hour * 24]
+set n_seconds_per_week [expr $n_seconds_per_day * 7]
+set n_seconds_per_month [expr $n_seconds_per_day * 30]
+set n_seconds_per_year [expr $n_seconds_per_month * 12]
+
+
 proc logistic_cdf {loc sc x} {
     return [expr {1/(1 + exp(-($x - $loc) / $sc))}]
 }
@@ -34,8 +41,17 @@ proc rand_poisson {loc} {
     return [expr {$k - 1}]
 }
 
-proc mean_adj {} {
-    return 0.
+proc mean_adj {age} {
+    global n_seconds_per_year
+    set r 0
+    if {$age < 16 * $n_seconds_per_year} {
+        set r 0.002
+    } elseif {$age < 25 * $n_seconds_per_year} {
+        set r 0.001
+    } else {
+        set r -0.001
+    }
+    return $r
 }
 
 proc calc_division_standings {division_id season_id} {
@@ -93,11 +109,10 @@ proc calc_division_standings {division_id season_id} {
 }
 
 proc main1 {} {
-    set n_seconds_per_hour 3600
-    set n_seconds_per_day [expr $n_seconds_per_hour * 24]
-    set n_seconds_per_week [expr $n_seconds_per_day * 7]
-    set n_seconds_per_month [expr $n_seconds_per_day * 30]
-    set n_seconds_per_year [expr $n_seconds_per_month * 12]
+    global n_seconds_per_day
+    global n_seconds_per_week
+    global n_seconds_per_month
+    global n_seconds_per_year
 
     set conf(n_countries) 1
     set conf(n_divisions_per_country) 3
@@ -107,7 +122,7 @@ proc main1 {} {
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
     set conf(date_end) \
-        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 4}]
+        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 12}]
     set conf(promotion_relegation_enabled) 1
     set conf(logging_level) 25
 
@@ -254,14 +269,18 @@ proc main1 {} {
                     set player_name $player_id
 # Have a base ability so that there is correlation between att and def
                     set player_ability [rand_logistic 0 1]
+                    set age [expr {16 + rand() * 19}]
+                    set age [expr {$age * $n_seconds_per_year}]
+                    set age [expr {$age + rand() * $n_seconds_per_year}]
+                    set age [expr {int($age)}]
                     set att [rand_logistic $player_ability 1]
                     set def [rand_logistic $player_ability 1]
                     set vel [expr {exp([rand_logistic 0 1])}]
                     db eval {
                         insert into player
-                        (id, name)
+                        (id, name, date_of_birth)
                         values
-                        ($player_id, $player_name)
+                        ($player_id, $player_name, -$age)
                     }
                     set playerteam_id [new_id]
                     db eval {
@@ -411,23 +430,25 @@ proc main1 {} {
         }
         if {$current_date % $n_seconds_per_week == 0} {
             db eval {
-                select *
-                from playerattr
-                where date = $current_date - $n_seconds_per_week
-            } existing {
-                set att_adj [rand_logistic [mean_adj] .02]
-                set def_adj [rand_logistic [mean_adj] .02]
-                set vel_adj [rand_logistic 0 .02]
-                set att [expr {$existing(att) + $att_adj}]
-                set def [expr {$existing(def) + $def_adj}]
-                set vel [expr {$existing(vel) + $vel_adj}]
+                select
+                pa.player_id, pa.att, pa.def, pa.vel, p.date_of_birth
+                from playerattr pa
+                join player p on p.id = pa.player_id
+                where date = $current_date
+            } pl {
+                set age [expr {$current_date - $pl(date_of_birth)}]
+                set att_adj [rand_logistic [mean_adj $age] .002]
+                set def_adj [rand_logistic [mean_adj $age] .002]
+                set vel_adj [rand_logistic 0 .002]
+                set att [expr {$pl(att) + $att_adj}]
+                set def [expr {$pl(def) + $def_adj}]
+                set vel [expr {$pl(vel) + $vel_adj}]
                 db eval {
                     insert into
                     playerattr
                     (player_id, date, att, def, vel)
                     values
-                    ($existing(player_id),
-                     $current_date, $att, $def, $vel)
+                    ($pl(player_id), $current_date + $n_seconds_per_week, $att, $def, $vel)
                 }
             }
         }

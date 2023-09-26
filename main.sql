@@ -29,7 +29,8 @@ create table teamdivision(
 
 create table player(
     id integer primary key,
-    name
+    name,
+    date_of_birth
 );
 
 create table playerteam(
