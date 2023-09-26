@@ -448,7 +448,8 @@ proc main1 {} {
                     playerattr
                     (player_id, date, att, def, vel)
                     values
-                    ($pl(player_id), $current_date + $n_seconds_per_week, $att, $def, $vel)
+                    ($pl(player_id),
+                     $current_date + $n_seconds_per_week, $att, $def, $vel)
                 }
             }
         }
