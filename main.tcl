@@ -34,6 +34,10 @@ proc rand_poisson {loc} {
     return [expr {$k - 1}]
 }
 
+proc mean_adj {} {
+    return 0.
+}
+
 proc calc_division_standings {division_id season_id} {
     set results [list]
     db eval {
@@ -411,13 +415,19 @@ proc main1 {} {
                 from playerattr
                 where date = $current_date - $n_seconds_per_week
             } existing {
+                set att_adj [rand_logistic [mean_adj] .02]
+                set def_adj [rand_logistic [mean_adj] .02]
+                set vel_adj [rand_logistic 0 .02]
+                set att [expr {$existing(att) + $att_adj}]
+                set def [expr {$existing(def) + $def_adj}]
+                set vel [expr {$existing(vel) + $vel_adj}]
                 db eval {
                     insert into
                     playerattr
                     (player_id, date, att, def, vel)
                     values
-                    ($existing(player_id), $existing(date) + $n_seconds_per_week,
-                     $existing(att), $existing(def), $existing(vel))
+                    ($existing(player_id),
+                     $current_date, $att, $def, $vel)
                 }
             }
         }
