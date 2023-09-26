@@ -103,7 +103,7 @@ proc main1 {} {
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
     set conf(date_end) \
-        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 12}]
+        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 4}]
     set conf(promotion_relegation_enabled) 1
     set conf(logging_level) 25
 
@@ -250,15 +250,14 @@ proc main1 {} {
                     set player_name $player_id
 # Have a base ability so that there is correlation between att and def
                     set player_ability [rand_logistic 0 1]
-                    set player_ability_att [rand_logistic $player_ability 1]
-                    set player_ability_def [rand_logistic $player_ability 1]
-                    set player_velocity [expr {exp([rand_logistic 0 1])}]
+                    set att [rand_logistic $player_ability 1]
+                    set def [rand_logistic $player_ability 1]
+                    set vel [expr {exp([rand_logistic 0 1])}]
                     db eval {
                         insert into player
-                        (id, name, ability_att, ability_def, velocity)
+                        (id, name)
                         values
-                        ($player_id, $player_name,
-                         $player_ability_att, $player_ability_def, $player_velocity)
+                        ($player_id, $player_name)
                     }
                     set playerteam_id [new_id]
                     db eval {
@@ -266,6 +265,12 @@ proc main1 {} {
                         (id, player_id, team_id, date_from, date_to)
                         values
                         ($playerteam_id, $player_id, $team_id, 0, NULL)
+                    }
+                    db eval {
+                        insert into playerattr
+                        (player_id, date, att, def, vel)
+                        values
+                        ($player_id, 0, $att, $def, $vel)
                     }
                 }
             }
@@ -400,6 +405,25 @@ proc main1 {} {
                 }
             }
         }
+        if {$current_date % $n_seconds_per_week == 0} {
+            db eval {
+                select *
+                from playerattr
+                where date = $current_date - $n_seconds_per_week
+            } existing {
+                db eval {
+                    insert into
+                    playerattr
+                    (player_id, date, att, def, vel)
+                    values
+                    ($existing(player_id), $existing(date) + $n_seconds_per_week,
+                     $existing(att), $existing(def), $existing(vel))
+                }
+            }
+        }
+        if {$current_date % $n_seconds_per_year == 0} {
+            db eval {analyze}
+        }
 # Find matches scheduled for today.
         db eval {
             select m.*, t1.name t1name, t2.name t2name
@@ -410,21 +434,25 @@ proc main1 {} {
         } match_row {
 # Find total ability and calculate scores and save them.
             set team_data [list]
+            set week_date \
+                [expr {$current_date - ($current_date % $n_seconds_per_week)}]
             foreach team_id [list $match_row(team1_id) $match_row(team2_id)] {
                 db eval {
                     select
-                    sum(sq.ability_att) total_ability_att,
-                    sum(sq.ability_def) total_ability_def,
-                    sum(sq.velocity) total_velocity
+                    sum(sq.att) total_att,
+                    sum(sq.def) total_def,
+                    sum(sq.vel) total_vel
                     from (
-                        select p.*
+                        select pa.*
                         from team
                         join playerteam pt on pt.team_id = team.id
                         join player p on p.id = pt.player_id
+                        join playerattr pa on pa.player_id = p.id
                         where team.id = $team_id
                         and pt.date_from <= $current_date
                         and (pt.date_to is null or pt.date_to > $current_date)
-                        order by (p.ability_att + p.ability_def) desc
+                        and pa.date = $week_date
+                        order by (pa.att + pa.def) desc
                         limit $conf(n_players_in_match)
                     ) sq
                 } row {
@@ -432,12 +460,12 @@ proc main1 {} {
                 }
             }
 # Play match
-            set att1 [dict get [lindex $team_data 0] total_ability_att]
-            set att2 [dict get [lindex $team_data 1] total_ability_att]
-            set def1 [dict get [lindex $team_data 0] total_ability_def]
-            set def2 [dict get [lindex $team_data 1] total_ability_def]
-            set vel1 [dict get [lindex $team_data 0] total_velocity]
-            set vel2 [dict get [lindex $team_data 1] total_velocity]
+            set att1 [dict get [lindex $team_data 0] total_att]
+            set att2 [dict get [lindex $team_data 1] total_att]
+            set def1 [dict get [lindex $team_data 0] total_def]
+            set def2 [dict get [lindex $team_data 1] total_def]
+            set vel1 [dict get [lindex $team_data 0] total_vel]
+            set vel2 [dict get [lindex $team_data 1] total_vel]
             set p1 [expr {[logistic_cdf 0 1 [expr {$att1 - $def2}]] / 28.}]
             set p2 [expr {[logistic_cdf 0 1 [expr {$att2 - $def1}]] / 38.}]
             set n [expr {11.5/(1./$vel1 + 1./$vel2)}]

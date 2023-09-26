@@ -29,10 +29,7 @@ create table teamdivision(
 
 create table player(
     id integer primary key,
-    name,
-    ability_att,
-    ability_def,
-    velocity
+    name
 );
 
 create table playerteam(
@@ -42,6 +39,20 @@ create table playerteam(
     date_from,
     date_to
 );
+
+create index playerteam_player_id on playerteam(player_id);
+create index playerteam_team_id on playerteam(team_id);
+
+create table playerattr(
+    id integer primary key,
+    player_id,
+    date,
+    att,
+    def,
+    vel
+);
+
+create index player_attr_player_id on playerattr(player_id);
 
 create table match(
     id integer primary key,
@@ -53,3 +64,6 @@ create table match(
     score_team1,
     score_team2
 );
+
+create index match_team1_id on match(team1_id);
+create index match_team2_id on match(team2_id);
