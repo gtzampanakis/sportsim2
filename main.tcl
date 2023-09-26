@@ -7,6 +7,9 @@ set n_seconds_per_week [expr $n_seconds_per_day * 7]
 set n_seconds_per_month [expr $n_seconds_per_day * 30]
 set n_seconds_per_year [expr $n_seconds_per_month * 12]
 
+set adj_per_week .001
+set sd_per_week .002
+
 
 proc logistic_cdf {loc sc x} {
     return [expr {1/(1 + exp(-($x - $loc) / $sc))}]
@@ -45,11 +48,11 @@ proc mean_adj {age} {
     global n_seconds_per_year
     set r 0
     if {$age < 16 * $n_seconds_per_year} {
-        set r 0.002
+        set r 2.
     } elseif {$age < 25 * $n_seconds_per_year} {
-        set r 0.001
+        set r 1.
     } else {
-        set r -0.001
+        set r -1.
     }
     return $r
 }
@@ -106,6 +109,16 @@ proc calc_division_standings {division_id season_id} {
         lappend results [array get row]
     }
     return $results
+}
+
+proc get_attr_adj {att_adj_name def_adj_name vel_adj_name age} {
+    global adj_per_week sd_per_week
+    upvar $att_adj_name att_adj
+    upvar $def_adj_name def_adj
+    upvar $vel_adj_name vel_adj
+    set att_adj [rand_logistic [expr {[mean_adj $age] * $adj_per_week}] $sd_per_week]
+    set def_adj [rand_logistic [expr {[mean_adj $age] * $adj_per_week}] $sd_per_week]
+    set vel_adj [rand_logistic 0 $sd_per_week]
 }
 
 proc main1 {} {
@@ -437,9 +450,7 @@ proc main1 {} {
                 where date = $current_date
             } pl {
                 set age [expr {$current_date - $pl(date_of_birth)}]
-                set att_adj [rand_logistic [mean_adj $age] .002]
-                set def_adj [rand_logistic [mean_adj $age] .002]
-                set vel_adj [rand_logistic 0 .002]
+                get_attr_adj att_adj def_adj vel_adj $age
                 set att [expr {$pl(att) + $att_adj}]
                 set def [expr {$pl(def) + $def_adj}]
                 set vel [expr {$pl(vel) + $vel_adj}]
