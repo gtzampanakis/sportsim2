@@ -1,4 +1,5 @@
 #!/usr/bin/tclsh
+namespace path {::tcl::mathfunc ::tcl::mathop}
 package require sqlite3
 
 set n_seconds_per_hour 3600
@@ -111,14 +112,17 @@ proc calc_division_standings {division_id season_id} {
     return $results
 }
 
-proc get_attr_adj {att_adj_name def_adj_name vel_adj_name age} {
+proc set_updated_attrs {att_name def_name vel_name age} {
     global adj_per_week sd_per_week
-    upvar $att_adj_name att_adj
-    upvar $def_adj_name def_adj
-    upvar $vel_adj_name vel_adj
-    set att_adj [rand_logistic [expr {[mean_adj $age] * $adj_per_week}] $sd_per_week]
-    set def_adj [rand_logistic [expr {[mean_adj $age] * $adj_per_week}] $sd_per_week]
+    upvar $att_name att
+    upvar $def_name def
+    upvar $vel_name vel
+    set att_adj [rand_logistic [* [mean_adj $age] $adj_per_week] $sd_per_week]
+    set def_adj [rand_logistic [* [mean_adj $age] $adj_per_week] $sd_per_week]
     set vel_adj [rand_logistic 0 $sd_per_week]
+    set att [+ $att $att_adj]
+    set def [+ $def $def_adj]
+    set vel [+ $vel $vel_adj]
 }
 
 proc main1 {} {
@@ -137,6 +141,7 @@ proc main1 {} {
     set conf(date_end) \
         [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 12}]
     set conf(promotion_relegation_enabled) 1
+    set conf(rating_update_enabled) 0
     set conf(logging_level) 25
 
     proc log {level msg} {
@@ -448,18 +453,15 @@ proc main1 {} {
                 from playerattr pa
                 join player p on p.id = pa.player_id
                 where date = $current_date
-            } pl {
-                set age [expr {$current_date - $pl(date_of_birth)}]
-                get_attr_adj att_adj def_adj vel_adj $age
-                set att [expr {$pl(att) + $att_adj}]
-                set def [expr {$pl(def) + $def_adj}]
-                set vel [expr {$pl(vel) + $vel_adj}]
+            } {
+                set age [- $current_date $date_of_birth]
+                set_updated_attrs att def vel $age
                 db eval {
                     insert into
                     playerattr
                     (player_id, date, att, def, vel)
                     values
-                    ($pl(player_id),
+                    ($player_id,
                      $current_date + $n_seconds_per_week, $att, $def, $vel)
                 }
             }
