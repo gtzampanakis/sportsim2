@@ -105,18 +105,38 @@
   ; Call cdr to cycle once. This makes the schedule nicer-looking by having the
   ; 0 play the opponents in order.
   (define cycle (cdr (range-cycle 1 n)))
-  (let loop-days ((cycle cycle) (i 0) (r '()))
-    (if (< i (1- n))
-      (let ((full (cons 0 cycle)))
-        (let
-          (
-            (day-pairs
-              (map
-                (lambda (k)
-                  (cons (list-ref full k) (list-ref full (- n 1 k))))
-                (range 0 (/ n 2)))))
-          (loop-days (cdr cycle) (1+ i) (cons day-pairs r))))
-      r)))
+  (define first-round-days
+    (let loop-days ((cycle cycle) (i 0) (r '()) (played-home-last-day '()))
+      (if (< i (1- n))
+        (let ((full (cons 0 cycle)))
+          (let
+            (
+              (day-pairs
+                (map
+                  (lambda (k)
+                    (let
+                      (
+                        (team0 (list-ref full k))
+                        (team1 (list-ref full (- n 1 k))))
+                      (if
+                        (and
+                          (memq team0 played-home-last-day)
+                          (not (memq team1 played-home-last-day)))
+                        (cons team1 team0)
+                        (cons team0 team1))))
+                  (range 0 (/ n 2)))))
+            (loop-days
+              (cdr cycle)
+              (1+ i)
+              (cons day-pairs r)
+              (map car day-pairs))))
+        r)))
+  (append
+    first-round-days
+    (map
+      (lambda (day-pairs)
+        (map (lambda (pair) (cons (cdr pair) (car pair))) day-pairs))
+      first-round-days)))
 
 (define (main)
   (define db (sqlite-open "sportsim2.db"))
@@ -125,7 +145,7 @@
     (lambda (port)
       (let ((schema-sql (get-string-all port)))
         (sqlite-exec db schema-sql))))
-  (for-each d (gen-round-robin 4))
+  (for-each d (gen-round-robin 6))
 )
 
 (main)
