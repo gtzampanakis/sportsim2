@@ -47,11 +47,14 @@ proc rand_poisson {loc} {
 
 proc mean_adj {age} {
     global n_seconds_per_year
+    set age_years [/ $age $n_seconds_per_year]
     set r 0
-    if {$age < 16 * $n_seconds_per_year} {
-        set r 2.
-    } elseif {$age < 25 * $n_seconds_per_year} {
+    if {$age_years < 16} {
+        set r 1.5
+    } elseif {$age_years < 25} {
         set r 1.
+    } elseif {$age_years < 30} {
+        set r -.2
     } else {
         set r -1.
     }
@@ -112,17 +115,25 @@ proc calc_division_standings {division_id season_id} {
     return $results
 }
 
-proc set_updated_attrs {att_name def_name vel_name age} {
+proc set_updated_attrs {att_name def_name vel_name age mplier} {
     global adj_per_week sd_per_week
-    upvar $att_name att
-    upvar $def_name def
-    upvar $vel_name vel
-    set att_adj [rand_logistic [* [mean_adj $age] $adj_per_week] $sd_per_week]
-    set def_adj [rand_logistic [* [mean_adj $age] $adj_per_week] $sd_per_week]
-    set vel_adj [rand_logistic 0 $sd_per_week]
+    upvar 2 $att_name att
+    upvar 2 $def_name def
+    upvar 2 $vel_name vel
+    set att_adj [rand_logistic [* $mplier [mean_adj $age] $adj_per_week] [* $mplier $adj_per_week]]
+    set def_adj [rand_logistic [* $mplier [mean_adj $age] $adj_per_week] [* $mplier $adj_per_week]]
+    set vel_adj [rand_logistic 0 [* $mplier $sd_per_week]]
     set att [+ $att $att_adj]
     set def [+ $def $def_adj]
     set vel [+ $vel $vel_adj]
+}
+
+proc set_updated_attrs_one_week {att_name def_name vel_name age} {
+    return [set_updated_attrs $att_name $def_name $vel_name $age 1]
+}
+
+proc set_updated_attrs_one_year {att_name def_name vel_name age} {
+    return [set_updated_attrs $att_name $def_name $vel_name $age 52]
 }
 
 proc main1 {} {
@@ -133,13 +144,17 @@ proc main1 {} {
 
     set conf(n_countries) 1
     set conf(n_divisions_per_country) 3
-    set conf(n_teams_per_division) 8
-    set conf(n_players_per_team) 25
+    set conf(n_teams_per_division) 6
+    set conf(n_players_per_team) 18
     set conf(n_players_in_match) 11
     set conf(date_start) 0
     set conf(season_start_year_offset) [expr {$n_seconds_per_month * 7}]
+    set conf(n_seasons_to_simulate) 6
     set conf(date_end) \
-        [expr {$conf(date_start) + $conf(season_start_year_offset) + $n_seconds_per_year * 12}]
+        [expr {
+            $conf(date_start)
+            + $conf(season_start_year_offset)
+            + $n_seconds_per_year * $conf(n_seasons_to_simulate)}]
     set conf(promotion_relegation_enabled) 1
     set conf(rating_update_enabled) 0
     set conf(logging_level) 25
@@ -287,18 +302,26 @@ proc main1 {} {
                     set player_name $player_id
 # Have a base ability so that there is correlation between att and def
                     set player_ability [rand_logistic 0 1]
+                    set vel [expr {exp([rand_logistic 0 1])}]
                     set age [expr {16 + rand() * 19}]
+                    set age_years $age
                     set age [expr {$age * $n_seconds_per_year}]
                     set age [expr {$age + rand() * $n_seconds_per_year}]
                     set age [expr {int($age)}]
-                    set att [rand_logistic $player_ability 1]
-                    set def [rand_logistic $player_ability 1]
-                    set vel [expr {exp([rand_logistic 0 1])}]
+                    set date_of_birth [- $age]
+                    set att [rand_logistic $player_ability .1]
+                    set def [rand_logistic $player_ability .1]
+                    set att0 $att
+                    set def0 $def
+                    set vel0 $vel
+                    for {set current_years 0} {$current_years < $age_years} {incr current_years} {
+                        set_updated_attrs_one_year att def vel [* $current_years $n_seconds_per_year]
+                    }
                     db eval {
                         insert into player
                         (id, name, date_of_birth)
                         values
-                        ($player_id, $player_name, -$age)
+                        ($player_id, $player_name, $date_of_birth)
                     }
                     set playerteam_id [new_id]
                     db eval {
@@ -455,7 +478,7 @@ proc main1 {} {
                 where date = $current_date
             } {
                 set age [- $current_date $date_of_birth]
-                set_updated_attrs att def vel $age
+                set_updated_attrs_one_week att def vel $age
                 db eval {
                     insert into
                     playerattr
