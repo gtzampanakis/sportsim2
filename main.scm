@@ -1,5 +1,6 @@
 ;# vim: tabstop=2 shiftwidth=2
 (use-modules (ice-9 format))
+(use-modules (ice-9 textual-ports))
 (use-modules (sqlite3))
 
 (define d
@@ -7,7 +8,6 @@
     (display s)
     (newline)))
 ; 
-; (define db (sqlite-open "sportsim2.db"))
 ; 
 ; (define stmt (sqlite-prepare db "select * from match order by id limit 5"))
 ; 
@@ -72,8 +72,59 @@
   (if (>= level conf-logging-level)
     (d msg)))
 
+(define (new-id)
+  (1+ (random 99999999999)))
+
+(define (range s n)
+; List of integers >= s and < n.
+  (let loop ((i n) (r '()))
+    (if (<= i s)
+      r
+      (loop (1- i) (cons (1- i) r)))))
+
+(define (range-cycle s n)
+; Improper list of integers >= s and < n.
+  (let ((ls (range s n)))
+    (if (null? ls)
+      ls
+      (let loop ((pair ls))
+        (if (null? (cdr pair))
+          (begin
+            (set-cdr! pair ls)
+            ls)
+          (loop (cdr pair)))))))
+
+(define (apply-n-times n proc arg)
+  (let loop ((n n) (r arg))
+    (if (= n 0)
+      r
+      (loop (1- n) (proc r)))))
+
+(define (gen-round-robin n)
+; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
+  (define cycle (range-cycle 1 n))
+  (let loop ((cycle cycle) (i 0) (r '()))
+    (if (< i (1- n))
+      (let ((full (cons 0 cycle)))
+        (d full)
+        (let
+          (
+            (day-pairs
+              (map
+                (lambda (k)
+                  (cons (list-ref full k) (list-ref full (- n 1 k))))
+                (range 0 (/ n 2)))))
+          (loop (cdr cycle) (1+ i) (cons day-pairs r))))
+      r)))
+
 (define (main)
-  (let ((schema-file-port (open-file "main.sql" "r")))
-    
+  (define db (sqlite-open "sportsim2.db"))
+  (call-with-input-file
+    "main.sql"
+    (lambda (port)
+      (let ((schema-sql (get-string-all port)))
+        (sqlite-exec db schema-sql))))
+  (for-each d (gen-round-robin 4))
+)
 
 (main)

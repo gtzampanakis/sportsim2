@@ -31,20 +31,6 @@ proc rand_logistic {loc sc} {
     return [expr {$loc + $sc * log10($r/(1-$r))}]
 }
 
-proc rand_poisson {loc} {
-	set L [expr {exp(-$loc)}]
-    set k 0
-    set p 1
-    while 1 {
-        incr k
-        set p [expr {$p * rand()}]
-        if {$p <= $L} {
-            break
-        }
-    }
-    return [expr {$k - 1}]
-}
-
 proc mean_adj {age} {
     global n_seconds_per_year
     set age_years [/ $age $n_seconds_per_year]
@@ -156,7 +142,6 @@ proc main1 {} {
             + $conf(season_start_year_offset)
             + $n_seconds_per_year * $conf(n_seasons_to_simulate)}]
     set conf(promotion_relegation_enabled) 1
-    set conf(rating_update_enabled) 0
     set conf(logging_level) 25
 
     proc log {level msg} {
