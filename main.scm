@@ -102,11 +102,12 @@
 
 (define (gen-round-robin n)
 ; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
-  (define cycle (range-cycle 1 n))
-  (let loop ((cycle cycle) (i 0) (r '()))
+  ; Call cdr to cycle once. This makes the schedule nicer-looking by having the
+  ; 0 play the opponents in order.
+  (define cycle (cdr (range-cycle 1 n)))
+  (let loop-days ((cycle cycle) (i 0) (r '()))
     (if (< i (1- n))
       (let ((full (cons 0 cycle)))
-        (d full)
         (let
           (
             (day-pairs
@@ -114,7 +115,7 @@
                 (lambda (k)
                   (cons (list-ref full k) (list-ref full (- n 1 k))))
                 (range 0 (/ n 2)))))
-          (loop (cdr cycle) (1+ i) (cons day-pairs r))))
+          (loop-days (cdr cycle) (1+ i) (cons day-pairs r))))
       r)))
 
 (define (main)
