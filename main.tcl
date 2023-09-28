@@ -106,8 +106,8 @@ proc set_updated_attrs {att_name def_name vel_name age mplier} {
     upvar 2 $att_name att
     upvar 2 $def_name def
     upvar 2 $vel_name vel
-    set att_adj [rand_logistic [* $mplier [mean_adj $age] $adj_per_week] [* $mplier $adj_per_week]]
-    set def_adj [rand_logistic [* $mplier [mean_adj $age] $adj_per_week] [* $mplier $adj_per_week]]
+    set att_adj [rand_logistic [* $mplier [mean_adj $age] $adj_per_week] [* $mplier $sd_per_week]]
+    set def_adj [rand_logistic [* $mplier [mean_adj $age] $adj_per_week] [* $mplier $sd_per_week]]
     set vel_adj [rand_logistic 0 [* $mplier $sd_per_week]]
     set att [+ $att $att_adj]
     set def [+ $def $def_adj]
@@ -296,9 +296,6 @@ proc main1 {} {
                     set date_of_birth [- $age]
                     set att [rand_logistic $player_ability .1]
                     set def [rand_logistic $player_ability .1]
-                    set att0 $att
-                    set def0 $def
-                    set vel0 $vel
                     for {set current_years 0} {$current_years < $age_years} {incr current_years} {
                         set_updated_attrs_one_year att def vel [* $current_years $n_seconds_per_year]
                     }
