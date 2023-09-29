@@ -12,6 +12,11 @@
 (define sd-per-week-base 0.001)
 
 (define conf-date-start 0)
+(define conf-n-countries 2)
+(define conf-n-divisions-per-country 5)
+(define conf-n-teams-per-division 14)
+(define conf-n-players-per-team 18)
+(define conf-n-players-in-match 11)
 
 (define d
   (lambda args
@@ -19,6 +24,70 @@
       (lambda (arg) (display arg)(display " "))
       args)
     (newline)))
+
+(define (range s n)
+; List of integers >= s and < n.
+  (unless (integer? s)
+    (error 'non-integer-s))
+  (unless (integer? n)
+    (error 'non-integer-n))
+  (let loop ((i n) (r '()))
+    (if (<= i s)
+      r
+      (loop (1- i) (cons (1- i) r)))))
+
+(define (range-cycle s n)
+; Improper list of integers >= s and < n.
+  (unless (integer? s)
+    (error 'non-integer-s))
+  (unless (integer? n)
+    (error 'non-integer-n))
+  (let ((ls (range s n)))
+    (if (null? ls)
+      ls
+      (let loop ((pair ls))
+        (if (null? (cdr pair))
+          (begin
+            (set-cdr! pair ls)
+            ls)
+          (loop (cdr pair)))))))
+
+(define (gen-round-robin n)
+; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
+  ; Call cdr to cycle once. This makes the schedule nicer-looking by having the
+  ; 0 play the opponents in order.
+  (define cycle (cdr (range-cycle 1 n)))
+  (define first-round-days
+    (let loop-days ((cycle cycle) (i 0) (r '()) (played-home-last-day '()))
+      (if (< i (1- n))
+        (let ((full (cons 0 cycle)))
+          (let (
+            (day-pairs
+              (map
+                (lambda (k)
+                  (let
+                    (
+                      (team0 (list-ref full k))
+                      (team1 (list-ref full (- n 1 k))))
+                    (if
+                      (and
+                        (memq team0 played-home-last-day)
+                        (not (memq team1 played-home-last-day)))
+                      (cons team1 team0)
+                      (cons team0 team1))))
+                (range 0 (/ n 2)))))
+            (loop-days
+              (cdr cycle)
+              (1+ i)
+              (cons day-pairs r)
+              (map car day-pairs))))
+        r)))
+  (append
+    first-round-days
+    (map
+      (lambda (day-pairs)
+        (map (lambda (pair) (cons (cdr pair) (car pair))) day-pairs))
+      first-round-days)))
 
 (define get-rs
   (lambda args
@@ -85,11 +154,31 @@
   (define age (- date date-of-birth))
   (playerattr-adj attr age rs))
 
+(define (player-team player-id)
+  (truncate/ player-id conf-n-players-per-team))
+
+(define (team-players team-id)
+  (let ((s (* team-id conf-n-players-per-team)))
+    (range s (+ s conf-n-players-per-team))))
+
+(define (team-starters team-id date)
+  (define players (team-players team-id))
+  (define total-proc
+    (lambda (player-id)
+      (+
+        (playerattr 'att player-id date)
+        (playerattr 'def player-id date))))
+  (define sorted (sort players (lambda (a b) (> (total-proc a) (total-proc b)))))
+  (take sorted conf-n-players-in-match))
+
 (define (main)
-  (d (player-date-of-birth 700990))
-  (d (playerattr 'att 700990 (+ (player-date-of-birth 700990) (y2s 24))))
-  (d (playerattr 'def 700990 (+ (player-date-of-birth 700990) (y2s 24))))
-  (d (playerattr 'vel 700990 (+ (player-date-of-birth 700990) (y2s 24))))
+  (d
+    (map
+      (lambda (player-id)
+        (+
+          (playerattr 'att player-id (y2s 25))
+          (playerattr 'def player-id (y2s 25))))
+      (team-starters 287429874 (y2s 25))))
 )
 
 (main)
