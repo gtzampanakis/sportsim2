@@ -25,6 +25,9 @@
       args)
     (newline)))
 
+(define (sum ls)
+  (fold + 0 ls))
+
 (define (range s n)
 ; List of integers >= s and < n.
   (unless (integer? s)
@@ -112,6 +115,16 @@
     (let ((z (log10 (/ r (- 1 r)))))
       (+ loc (* sc z)))))
 
+(define (logistic-cdf loc sc x)
+  (let ((z (/ (- x loc) sc)))
+    (/ 1 (+ 1 (exp (- z))))))
+
+(define (rand-binomial p n rs)
+  (let loop ((k 0) (i 0))
+    (if (= i n)
+      k
+      (loop (if (< (random:uniform rs) p) (1+ k) k) (1+ i)))))
+
 (define (player-name player-id)
   player-id)
 
@@ -171,14 +184,33 @@
   (define sorted (sort players (lambda (a b) (> (total-proc a) (total-proc b)))))
   (take sorted conf-n-players-in-match))
 
-(define (main)
-  (d
+(define (team-attr attr team-id date)
+  (define starters (team-starters team-id date))
+  (sum
     (map
       (lambda (player-id)
-        (+
-          (playerattr 'att player-id (y2s 25))
-          (playerattr 'def player-id (y2s 25))))
-      (team-starters 287429874 (y2s 25))))
+        (playerattr attr player-id date))
+      starters))) 
+
+(define (match-result team-id-1 team-id-2 date)
+  (define rs (get-rs 'match-result team-id-1 team-id-2 date))
+  (define att1 (team-attr 'att team-id-1 date))
+  (define att2 (team-attr 'att team-id-2 date))
+  (define def1 (team-attr 'def team-id-1 date))
+  (define def2 (team-attr 'def team-id-2 date))
+  (define vel1 (team-attr 'vel team-id-1 date))
+  (define vel2 (team-attr 'vel team-id-2 date))
+  (define p1 (logistic-cdf 0 1 (* 0.0357 (- att1 def2))))
+  (define p2 (logistic-cdf 0 1 (* 0.0263 (- att2 def1))))
+  (define n (truncate (/ 11.5 (+ (/ 1. vel1) (/ 1. vel2)))))
+  (define score1 (rand-binomial p1 n rs))
+  (define score2 (rand-binomial p2 n rs))
+  (cons score1 score2))
+
+(define (main)
+  (match-result 289 29999999 (y2s 26))
 )
 
+;(use-modules (statprof))
+;(statprof main)
 (main)
