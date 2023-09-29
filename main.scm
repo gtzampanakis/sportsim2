@@ -324,7 +324,6 @@
       (update-attrs db current-date))
     (loop-days (+ current-date n-seconds-per-day)))
 
-
   (sqlite-exec db "commit"))
 
 (main)
