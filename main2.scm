@@ -28,6 +28,9 @@
 (define (sum ls)
   (fold + 0 ls))
 
+(define (prod ls)
+  (fold * 1 ls))
+
 (define (range s n)
 ; List of integers >= s and < n.
   (unless (integer? s)
@@ -54,6 +57,36 @@
             (set-cdr! pair ls)
             ls)
           (loop (cdr pair)))))))
+
+(define (is2i as ns)
+  ; (=
+  ;     (is21 '(1 2 3) '(10 20))
+  ;     621)
+  ; (=
+  ;   (is2i '(444 333 222) '(1000 1000))
+  ;   222333444)
+  (when (not (= (length as) (1+ (length ns))))
+    (error "is2i: wrong input lengths"))
+  (let loop ((as as) (ns ns) (s 0) (p 1))
+    (when (not (null? ns))
+      (when (>= (car as) (car ns))
+        (error "is2i: value exceeds dimension")))
+    (if (null? ns)
+      (+ s (* p (car as)))
+      (loop
+        (cdr as)
+        (cdr ns)
+        (+ s (* p (car as)))
+        (* p (car ns))))))
+
+(define (i2is i ns)
+  (let loop ((ns ns) (i i) (as '()))
+    (if (null? ns)
+      (reverse (cons i as))
+      (loop
+        (cdr ns)
+        (quotient i (car ns))
+        (cons (remainder i (car ns)) as)))))
 
 (define (gen-round-robin n)
 ; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
@@ -192,6 +225,9 @@
         (playerattr attr player-id date))
       starters))) 
 
+(define (division-id country-id rank)
+  5)
+
 (define (match-result team-id-1 team-id-2 date)
   (define rs (get-rs 'match-result team-id-1 team-id-2 date))
   (define att1 (team-attr 'att team-id-1 date))
@@ -208,7 +244,17 @@
   (cons score1 score2))
 
 (define (main)
-  (match-result 289 29999999 (y2s 26))
+  ;(match-result 289 29999999 (y2s 26))
+  ;(d (is2i '(521) '()))
+  (d (is2i '(333 222) '(1000)))
+  (d (is2i '(444 333 222) '(1000 1000)))
+  (d (is2i '(1 2 3) '(10 20)))
+  (d (is2i '(0 3 3) '(10 20)))
+  (d (i2is 621 '(10 20)))
+  (d (i2is 630 '(10 20)))
+  (d (i2is 630 '(20 10)))
+  (d (i2is 222333444 '(1000 1000)))
+  (d (i2is (is2i '(5 8 12) '(20 10)) '(20 10)))
 )
 
 ;(use-modules (statprof))
