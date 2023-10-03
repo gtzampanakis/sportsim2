@@ -12,7 +12,6 @@
 (define sd-per-week-base 0.001)
 
 (define conf-date-start 0)
-(define conf-n-countries 100)
 (define conf-n-divisions-per-country 5)
 (define conf-n-teams-per-division 14)
 (define conf-n-players-per-team 18)
@@ -25,7 +24,24 @@
       args)
     (newline)))
 
-(define (sum ls)
+(define (memoized-proc proc)
+  (define cache (make-hash-table))
+  (lambda args
+    (define cached-result (hash-ref cache args))
+    (when (eq? cached-result #f)
+      (let ((result (apply proc args)))
+        (hash-set! cache args result)
+        (set! cached-result result)))
+    cached-result))
+
+(define-syntax define-memoized
+  (syntax-rules ()
+    ((_ (name . args) body)
+      (define name
+        (memoized-proc
+          (lambda args body))))))
+
+(define-memoized (sum ls)
   (fold + 0 ls))
 
 (define (prod ls)
@@ -236,7 +252,7 @@
 (define (division-id division-rank country-id)
   (is2i (list division-rank country-id) (list conf-n-divisions-per-country)))
 
-(define (division-rank-country division)
+(define-memoized (division-rank-country division)
   (i2is division (list conf-n-divisions-per-country)))
 
 (define (division-rank division)
@@ -261,7 +277,7 @@
     '()
     (division-id (1+ rank) country)))
 
-(define (team-division team season)
+(define-memoized (team-division team season)
   (let loop ((current-season 0) (division (quotient team conf-n-teams-per-division)))
     (if (= season current-season)
       division
@@ -282,7 +298,7 @@
               (lower-division division)))
             (else division)))))))
 
-(define (division-teams division season)
+(define-memoized (division-teams division season)
   (sort
     (let loop (
         (current-season 0)
@@ -313,7 +329,7 @@
               (drop (drop-right div-rankings 3) 3))))))
     <))
 
-(define (division-rankings division season)
+(define-memoized (division-rankings division season)
   (sort (division-teams division season) <))
 
 (define (match-result team-id-1 team-id-2 date)
@@ -338,17 +354,11 @@
   (d (division-teams 3 0))
   (d (division-teams 4 0))
   (d)
-  (d (division-teams 0 1))
-  (d (division-teams 1 1))
-  (d (division-teams 2 1))
-  (d (division-teams 3 1))
-  (d (division-teams 4 1))
-  (d)
-  (d (division-teams 0 50))
-  (d (division-teams 1 50))
-  (d (division-teams 2 50))
-  (d (division-teams 3 50))
-  (d (division-teams 4 50))
+  (d (division-teams 0 100))
+  (d (division-teams 1 100))
+  (d (division-teams 2 100))
+  (d (division-teams 3 100))
+  (d (division-teams 4 100))
 )
 
 ;(use-modules (statprof))
