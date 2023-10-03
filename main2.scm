@@ -283,31 +283,35 @@
             (else division)))))))
 
 (define (division-teams division season)
-  (let loop (
-      (current-season 0)
-      (teams
-        (let ((s (* division conf-n-teams-per-division)))
-          (range s (+ s conf-n-teams-per-division)))))
-    (if (= season current-season)
-      teams
-      (let* (
-          (div-rank (division-rank division))
-          (higher-div (higher-division division))
-          (lower-div (lower-division division))
-          (div-rankings
-            (division-rankings division current-season))
-          (higher-rankings
-            (if (null? higher-div) '() (division-rankings higher-div current-season)))
-          (lower-rankings
-            (if (null? lower-div) '() (division-rankings lower-div current-season))))
-        (append
-          (if (null? higher-rankings)
-            (take div-rankings 3)
-            (take-right higher-rankings 3))
-          (if (null? lower-rankings)
-            (take-right div-rankings 3)
-            (take lower-rankings 3))
-          (drop (drop-right div-rankings 3) 3))))))
+  (sort
+    (let loop (
+        (current-season 0)
+        (teams
+          (let ((s (* division conf-n-teams-per-division)))
+            (range s (+ s conf-n-teams-per-division)))))
+      (if (= season current-season)
+        teams
+        (loop
+          (1+ current-season)
+          (let* (
+              (div-rank (division-rank division))
+              (higher-div (higher-division division))
+              (lower-div (lower-division division))
+              (div-rankings
+                (division-rankings division current-season))
+              (higher-rankings
+                (if (null? higher-div) '() (division-rankings higher-div current-season)))
+              (lower-rankings
+                (if (null? lower-div) '() (division-rankings lower-div current-season))))
+            (append
+              (if (null? higher-rankings)
+                (take div-rankings 3)
+                (take-right higher-rankings 3))
+              (if (null? lower-rankings)
+                (take-right div-rankings 3)
+                (take lower-rankings 3))
+              (drop (drop-right div-rankings 3) 3))))))
+    <))
 
 (define (division-rankings division season)
   (sort (division-teams division season) <))
@@ -339,6 +343,12 @@
   (d (division-teams 2 1))
   (d (division-teams 3 1))
   (d (division-teams 4 1))
+  (d)
+  (d (division-teams 0 50))
+  (d (division-teams 1 50))
+  (d (division-teams 2 50))
+  (d (division-teams 3 50))
+  (d (division-teams 4 50))
 )
 
 ;(use-modules (statprof))
