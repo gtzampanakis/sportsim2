@@ -12,7 +12,7 @@
 (define sd-per-week-base 0.001)
 
 (define conf-date-start 0)
-(define conf-n-countries 2)
+(define conf-n-countries 100)
 (define conf-n-divisions-per-country 5)
 (define conf-n-teams-per-division 14)
 (define conf-n-players-per-team 18)
@@ -30,6 +30,14 @@
 
 (define (prod ls)
   (fold * 1 ls))
+
+(define (index ls val)
+  (let loop ((ls ls) (r 0))
+    (if (null? ls)
+      #f
+      (if (equal? (car ls) val)
+        r
+        (loop (cdr ls) (1+ r))))))
 
 (define (range s n)
 ; List of integers >= s and < n.
@@ -225,8 +233,84 @@
         (playerattr attr player-id date))
       starters))) 
 
-(define (division-id country-id rank)
-  5)
+(define (division-id division-rank country-id)
+  (is2i (list division-rank country-id) (list conf-n-divisions-per-country)))
+
+(define (division-rank-country division)
+  (i2is division (list conf-n-divisions-per-country)))
+
+(define (division-rank division)
+  (list-ref (division-rank-country division) 0))
+
+(define (division-country division)
+  (list-ref (division-rank-country division) 1))
+
+(define (higher-division division)
+  (define rank-country (division-rank-country division))
+  (define rank (list-ref rank-country 0))
+  (define country (list-ref rank-country 1))
+  (if (= rank 0)
+    '()
+    (division-id (1- rank) country)))
+
+(define (lower-division division)
+  (define rank-country (division-rank-country division))
+  (define rank (list-ref rank-country 0))
+  (define country (list-ref rank-country 1))
+  (if (= rank (1- conf-n-divisions-per-country))
+    '()
+    (division-id (1+ rank) country)))
+
+(define (team-division team season)
+  (let loop ((current-season 0) (division (quotient team conf-n-teams-per-division)))
+    (if (= season current-season)
+      division
+      (let* (
+          (div-rank (division-rank division))
+          (rankings (division-rankings division current-season))
+          (team-ranking (index rankings team)))
+        (loop
+          (1+ current-season)
+          (cond
+            ((and
+                (> div-rank 0)
+                (< team-ranking 3))
+              (higher-division division))
+            ((and
+                (< div-rank (1- conf-n-divisions-per-country))
+                (>= team-ranking (- conf-n-teams-per-division))
+              (lower-division division)))
+            (else division)))))))
+
+(define (division-teams division season)
+  (let loop (
+      (current-season 0)
+      (teams
+        (let ((s (* division conf-n-teams-per-division)))
+          (range s (+ s conf-n-teams-per-division)))))
+    (if (= season current-season)
+      teams
+      (let* (
+          (div-rank (division-rank division))
+          (higher-div (higher-division division))
+          (lower-div (lower-division division))
+          (div-rankings
+            (division-rankings division current-season))
+          (higher-rankings
+            (if (null? higher-div) '() (division-rankings higher-div current-season)))
+          (lower-rankings
+            (if (null? lower-div) '() (division-rankings lower-div current-season))))
+        (append
+          (if (null? higher-rankings)
+            (take div-rankings 3)
+            (take-right higher-rankings 3))
+          (if (null? lower-rankings)
+            (take-right div-rankings 3)
+            (take lower-rankings 3))
+          (drop (drop-right div-rankings 3) 3))))))
+
+(define (division-rankings division season)
+  (sort (division-teams division season) <))
 
 (define (match-result team-id-1 team-id-2 date)
   (define rs (get-rs 'match-result team-id-1 team-id-2 date))
@@ -244,17 +328,17 @@
   (cons score1 score2))
 
 (define (main)
-  ;(match-result 289 29999999 (y2s 26))
-  ;(d (is2i '(521) '()))
-  (d (is2i '(333 222) '(1000)))
-  (d (is2i '(444 333 222) '(1000 1000)))
-  (d (is2i '(1 2 3) '(10 20)))
-  (d (is2i '(0 3 3) '(10 20)))
-  (d (i2is 621 '(10 20)))
-  (d (i2is 630 '(10 20)))
-  (d (i2is 630 '(20 10)))
-  (d (i2is 222333444 '(1000 1000)))
-  (d (i2is (is2i '(5 8 12) '(20 10)) '(20 10)))
+  (d (division-teams 0 0))
+  (d (division-teams 1 0))
+  (d (division-teams 2 0))
+  (d (division-teams 3 0))
+  (d (division-teams 4 0))
+  (d)
+  (d (division-teams 0 1))
+  (d (division-teams 1 1))
+  (d (division-teams 2 1))
+  (d (division-teams 3 1))
+  (d (division-teams 4 1))
 )
 
 ;(use-modules (statprof))
