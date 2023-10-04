@@ -24,37 +24,6 @@
       args)
     (newline)))
 
-(define (memoized-proc proc)
-  (define cache (make-hash-table))
-  (lambda args
-    (define cached-result (hash-ref cache args))
-    (when (eq? cached-result #f)
-      (let ((result (apply proc args)))
-        (hash-set! cache args result)
-        (set! cached-result result)))
-    cached-result))
-
-(define-syntax define-memoized
-  (syntax-rules ()
-    ((_ (name . args) body)
-      (define name
-        (memoized-proc
-          (lambda args body))))))
-
-(define-memoized (sum ls)
-  (fold + 0 ls))
-
-(define (prod ls)
-  (fold * 1 ls))
-
-(define (index ls val)
-  (let loop ((ls ls) (r 0))
-    (if (null? ls)
-      #f
-      (if (equal? (car ls) val)
-        r
-        (loop (cdr ls) (1+ r))))))
-
 (define (range s n)
 ; List of integers >= s and < n.
   (unless (integer? s)
@@ -81,6 +50,52 @@
             (set-cdr! pair ls)
             ls)
           (loop (cdr pair)))))))
+
+(define (enumerate ls)
+  (map
+    cons
+    ls
+    (range 0 (length ls))))
+
+(define (flatten ls)
+  (fold append '() ls))
+
+(define (map-twice proc ls)
+  (map
+    (lambda (ls2)
+      (map proc ls2))
+    ls))
+
+(define (memoized-proc proc)
+  (define cache (make-hash-table))
+  (lambda args
+    (define cached-result (hash-ref cache args))
+    (when (eq? cached-result #f)
+      (let ((result (apply proc args)))
+        (hash-set! cache args result)
+        (set! cached-result result)))
+    cached-result))
+
+(define-syntax define-memoized
+  (syntax-rules ()
+    ((_ (name . args) exp exp* ...)
+      (define name
+        (memoized-proc
+          (lambda args exp exp* ...))))))
+
+(define (sum ls)
+  (fold + 0 ls))
+
+(define (prod ls)
+  (fold * 1 ls))
+
+(define (index ls val)
+  (let loop ((ls ls) (r 0))
+    (if (null? ls)
+      #f
+      (if (equal? (car ls) val)
+        r
+        (loop (cdr ls) (1+ r))))))
 
 (define (is2i as ns)
   ; (=
@@ -133,8 +148,8 @@
                       (and
                         (memq team0 played-home-last-day)
                         (not (memq team1 played-home-last-day)))
-                      (cons team1 team0)
-                      (cons team0 team1))))
+                      (list team1 team0)
+                      (list team0 team1))))
                 (range 0 (/ n 2)))))
             (loop-days
               (cdr cycle)
@@ -146,7 +161,7 @@
     first-round-days
     (map
       (lambda (day-pairs)
-        (map (lambda (pair) (cons (cdr pair) (car pair))) day-pairs))
+        (map (lambda (match) (reverse match)) day-pairs))
       first-round-days)))
 
 (define get-rs
@@ -199,7 +214,7 @@
     ((< age-years 38) -1.0)
     (else             -2.0)))
 
-(define (playerattr-adj attr age rs)
+(define-memoized (playerattr-adj attr age rs)
   (let loop ((current-age 0) (r 0))
     (define mplier
       (cond
@@ -218,7 +233,7 @@
             sd-per-week-base
             rs))))))
 
-(define (playerattr attr player-id date)
+(define-memoized (playerattr attr player-id date)
   (define rs (get-rs 'playerattr player-id attr))
   (define date-of-birth (player-date-of-birth player-id))
   (define age (- date date-of-birth))
@@ -231,7 +246,7 @@
   (let ((s (* team-id conf-n-players-per-team)))
     (range s (+ s conf-n-players-per-team))))
 
-(define (team-starters team-id date)
+(define-memoized (team-starters team-id date)
   (define players (team-players team-id))
   (define total-proc
     (lambda (player-id)
@@ -241,7 +256,7 @@
   (define sorted (sort players (lambda (a b) (> (total-proc a) (total-proc b)))))
   (take sorted conf-n-players-in-match))
 
-(define (team-attr attr team-id date)
+(define-memoized (team-attr attr team-id date)
   (define starters (team-starters team-id date))
   (sum
     (map
@@ -252,7 +267,7 @@
 (define (division-id division-rank country-id)
   (is2i (list division-rank country-id) (list conf-n-divisions-per-country)))
 
-(define-memoized (division-rank-country division)
+(define (division-rank-country division)
   (i2is division (list conf-n-divisions-per-country)))
 
 (define (division-rank division)
@@ -329,23 +344,89 @@
               (drop (drop-right div-rankings 3) 3))))))
     <))
 
-(define-memoized (division-rankings division season)
-  (sort (division-teams division season) <))
-
-(define (match-result team-id-1 team-id-2 date)
+(define-memoized (match-result teams date)
+  (define team-id-1 (car teams))
+  (define team-id-2 (cadr teams))
   (define rs (get-rs 'match-result team-id-1 team-id-2 date))
   (define att1 (team-attr 'att team-id-1 date))
   (define att2 (team-attr 'att team-id-2 date))
   (define def1 (team-attr 'def team-id-1 date))
   (define def2 (team-attr 'def team-id-2 date))
-  (define vel1 (team-attr 'vel team-id-1 date))
-  (define vel2 (team-attr 'vel team-id-2 date))
-  (define p1 (logistic-cdf 0 1 (* 0.0357 (- att1 def2))))
-  (define p2 (logistic-cdf 0 1 (* 0.0263 (- att2 def1))))
+  (define vel1 (exp (team-attr 'vel team-id-1 date)))
+  (define vel2 (exp (team-attr 'vel team-id-2 date)))
+  (define p1 (* 0.52 (logistic-cdf 0 1 (- att1 def2))))
+  (define p2 (* 0.42 (logistic-cdf 0 1 (- att2 def1))))
   (define n (truncate (/ 11.5 (+ (/ 1. vel1) (/ 1. vel2)))))
   (define score1 (rand-binomial p1 n rs))
   (define score2 (rand-binomial p2 n rs))
-  (cons score1 score2))
+  ;(d vel1 vel2 p1 p2 n score1 score2)
+  ;(d "")
+  (list score1 score2))
+
+(define-memoized (division-schedule division season)
+  (define teams (division-teams division season))
+  (define schedule-ords (gen-round-robin conf-n-teams-per-division))
+  (define ord-to-team (lambda (ord) (list-ref teams ord)))
+  (map
+    (lambda (day)
+      (map
+        (lambda (match)
+          (map ord-to-team match))
+        day))
+    schedule-ords))
+
+(define-memoized (division-results division season)
+  (define schedule (division-schedule division season))
+  (map
+    (lambda (day day-index)
+      (map
+        (lambda (match)
+          (match-result match (* day-index n-seconds-per-week)))
+        day))
+    schedule
+    (range 0 (length schedule))))
+
+(define-memoized (division-points division season)
+  (define teams (division-teams division season))
+  (define schedule (flatten (division-schedule division season)))
+  (define results (flatten (division-results division season)))
+  (define points-granular
+    (fold
+      (lambda (match result acc)
+        (define team1 (car match))
+        (define team2 (cadr match))
+        (define score1 (car result))
+        (define score2 (cadr result))
+        (append
+          (cond
+            ((> score1 score2)
+              (list (cons team1 3)))
+            ((< score1 score2)
+              (list (cons team2 3)))
+            ((= score1 score2)
+              (list (cons team1 1) (cons team2 1))))
+          acc))
+      '()
+      schedule
+      results))
+  (map
+    (lambda (team)
+      (fold + 0
+        (map cdr
+          (filter
+            (lambda (pair) (= (car pair) team))
+            points-granular))))
+    teams))
+
+(define-memoized (division-rankings division season)
+  (define teams (division-teams division season))
+  (define points (division-points division season))
+  (define team-points-pairs (map cons teams points))
+  (map car
+    (sort
+      team-points-pairs
+      (lambda (team-points-pair1 team-points-pair2)
+        (> (cdr team-points-pair1) (cdr team-points-pair2))))))
 
 (define (main)
   (d (division-teams 0 0))
@@ -354,11 +435,11 @@
   (d (division-teams 3 0))
   (d (division-teams 4 0))
   (d)
-  (d (division-teams 0 100))
-  (d (division-teams 1 100))
-  (d (division-teams 2 100))
-  (d (division-teams 3 100))
-  (d (division-teams 4 100))
+  (d (division-teams 0 1))
+  (d (division-teams 1 1))
+  (d (division-teams 2 1))
+  (d (division-teams 3 1))
+  (d (division-teams 4 1))
 )
 
 ;(use-modules (statprof))
