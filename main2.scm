@@ -165,6 +165,7 @@
         (map (lambda (match) (reverse match)) day-pairs))
       first-round-days)))
 
+; Switching this to memoized changes the results!
 (define-memoized (get-rs . args)
   (seed->random-state
     (apply string-append
@@ -191,7 +192,7 @@
   (let ((z (/ (- x loc) sc)))
     (/ 1 (+ 1 (exp (- z))))))
 
-(define-memoized (rand-binomial p n rs)
+(define (rand-binomial p n rs)
   (let loop ((k 0) (i 0))
     (if (= i n)
       k
@@ -345,15 +346,15 @@
     <))
 
 (define-memoized (match-result teams date)
-  (define team-id-1 (car teams))
-  (define team-id-2 (cadr teams))
-  (define rs (get-rs 'match-result team-id-1 team-id-2 date))
-  (define att1 (team-attr 'att team-id-1 date))
-  (define att2 (team-attr 'att team-id-2 date))
-  (define def1 (team-attr 'def team-id-1 date))
-  (define def2 (team-attr 'def team-id-2 date))
-  (define vel1 (exp (team-attr 'vel team-id-1 date)))
-  (define vel2 (exp (team-attr 'vel team-id-2 date)))
+  (define team1 (car teams))
+  (define team2 (cadr teams))
+  (define rs (get-rs 'match-result team1 team2 date))
+  (define att1 (team-attr 'att team1 date))
+  (define att2 (team-attr 'att team2 date))
+  (define def1 (team-attr 'def team1 date))
+  (define def2 (team-attr 'def team2 date))
+  (define vel1 (exp (team-attr 'vel team1 date)))
+  (define vel2 (exp (team-attr 'vel team2 date)))
   (define p1 (* 0.52 (logistic-cdf 0 1 (- att1 def2))))
   (define p2 (* 0.42 (logistic-cdf 0 1 (- att2 def1))))
   (define n (truncate (/ 11.5 (+ (/ 1. vel1) (/ 1. vel2)))))
@@ -440,11 +441,11 @@
   (for-each
     (lambda (season)
       (d season)
-      (d (division-rankings 0 season) (division-attr 'att 0 season))
-      (d (division-rankings 1 season) (division-attr 'att 1 season))
-      (d (division-rankings 2 season) (division-attr 'att 2 season))
-      (d (division-rankings 3 season) (division-attr 'att 3 season))
-      (d (division-rankings 4 season) (division-attr 'att 4 season)))
+      (d (division-rankings 0 season) (+ (division-attr 'att 0 season) (division-attr 'def 0 season)))
+      (d (division-rankings 1 season) (+ (division-attr 'att 1 season) (division-attr 'def 1 season)))
+      (d (division-rankings 2 season) (+ (division-attr 'att 2 season) (division-attr 'def 2 season)))
+      (d (division-rankings 3 season) (+ (division-attr 'att 3 season) (division-attr 'def 3 season)))
+      (d (division-rankings 4 season) (+ (division-attr 'att 4 season) (division-attr 'def 4 season))))
     (range 0 5))
 )
 
