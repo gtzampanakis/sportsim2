@@ -13,7 +13,7 @@
 
 (define conf-date-start 0)
 (define conf-n-divisions-per-country 5)
-(define conf-n-teams-per-division 8)
+(define conf-n-teams-per-division 6)
 (define conf-n-players-per-team 18)
 (define conf-n-players-in-match 11)
 
@@ -69,6 +69,7 @@
 (define (memoized-proc proc)
   (define cache (make-hash-table))
   (lambda args
+    ;(d (hash-count (const #t) cache))
     (define cached-result (hash-ref cache args))
     (when (eq? cached-result #f)
       (let ((result (apply proc args)))
@@ -127,7 +128,7 @@
         (quotient i (car ns))
         (cons (remainder i (car ns)) as)))))
 
-(define (gen-round-robin n)
+(define-memoized (gen-round-robin n)
 ; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
   ; Call cdr to cycle once. This makes the schedule nicer-looking by having the
   ; 0 play the opponents in order.
@@ -164,17 +165,16 @@
         (map (lambda (match) (reverse match)) day-pairs))
       first-round-days)))
 
-(define get-rs
-  (lambda args
-    (seed->random-state
-      (apply string-append
-        (map
-          (lambda (arg)
-            (cond
-              ((number? arg) (number->string arg))
-              ((symbol? arg) (symbol->string arg))
-              (else arg)))
-          (cons 2749828749824 args))))))
+(define-memoized (get-rs . args)
+  (seed->random-state
+    (apply string-append
+      (map
+        (lambda (arg)
+          (cond
+            ((number? arg) (number->string arg))
+            ((symbol? arg) (symbol->string arg))
+            (else arg)))
+        (cons 2749828749824 args)))))
 
 (define (s2y s)
   (truncate/ s n-seconds-per-year))
@@ -191,7 +191,7 @@
   (let ((z (/ (- x loc) sc)))
     (/ 1 (+ 1 (exp (- z))))))
 
-(define (rand-binomial p n rs)
+(define-memoized (rand-binomial p n rs)
   (let loop ((k 0) (i 0))
     (if (= i n)
       k
@@ -200,7 +200,7 @@
 (define (player-name player-id)
   player-id)
 
-(define (player-date-of-birth player-id)
+(define-memoized (player-date-of-birth player-id)
   (define rs (get-rs 'player-date-of-birth player-id))
   (define age-years (+ 16 (* (random:uniform rs) 19)))
   (truncate (- conf-date-start (* age-years n-seconds-per-year))))
@@ -437,35 +437,15 @@
       (division-teams division season))))
 
 (define (main)
-  (d (division-rankings 0 0) (division-attr 'att 0 0))
-  (d (division-rankings 1 0) (division-attr 'att 1 0))
-  (d (division-rankings 2 0) (division-attr 'att 2 0))
-  (d (division-rankings 3 0) (division-attr 'att 3 0))
-  (d (division-rankings 4 0) (division-attr 'att 4 0))
-  (d)
-  (d (division-rankings 0 1) (division-attr 'att 0 1))
-  (d (division-rankings 1 1) (division-attr 'att 1 1))
-  (d (division-rankings 2 1) (division-attr 'att 2 1))
-  (d (division-rankings 3 1) (division-attr 'att 3 1))
-  (d (division-rankings 4 1) (division-attr 'att 4 1))
-  (d)
-  (d (division-rankings 0 2) (division-attr 'att 0 2))
-  (d (division-rankings 1 2) (division-attr 'att 1 2))
-  (d (division-rankings 2 2) (division-attr 'att 2 2))
-  (d (division-rankings 3 2) (division-attr 'att 3 2))
-  (d (division-rankings 4 2) (division-attr 'att 4 2))
-  (d)
-  (d (division-rankings 0 3) (division-attr 'att 0 3))
-  (d (division-rankings 1 3) (division-attr 'att 1 3))
-  (d (division-rankings 2 3) (division-attr 'att 2 3))
-  (d (division-rankings 3 3) (division-attr 'att 3 3))
-  (d (division-rankings 4 3) (division-attr 'att 4 3))
-  (d)
-  (d (division-rankings 0 4) (division-attr 'att 0 4))
-  (d (division-rankings 1 4) (division-attr 'att 1 4))
-  (d (division-rankings 2 4) (division-attr 'att 2 4))
-  (d (division-rankings 3 4) (division-attr 'att 3 4))
-  (d (division-rankings 4 4) (division-attr 'att 4 4))
+  (for-each
+    (lambda (season)
+      (d season)
+      (d (division-rankings 0 season) (division-attr 'att 0 season))
+      (d (division-rankings 1 season) (division-attr 'att 1 season))
+      (d (division-rankings 2 season) (division-attr 'att 2 season))
+      (d (division-rankings 3 season) (division-attr 'att 3 season))
+      (d (division-rankings 4 season) (division-attr 'att 4 season)))
+    (range 0 5))
 )
 
 ;(use-modules (statprof))
