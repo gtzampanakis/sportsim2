@@ -17,12 +17,31 @@
 (define conf-n-players-per-team 18)
 (define conf-n-players-in-match 11)
 
+(define retirement-age (* 34 n-seconds-per-year))
+
 (define d
   (lambda args
     (for-each
       (lambda (arg) (display arg)(display " "))
       args)
     (newline)))
+
+(define (memoized-proc proc)
+  (define cache (make-hash-table))
+  (lambda args
+    (define cached-result (hash-ref cache args))
+    (when (eq? cached-result #f)
+      (let ((result (apply proc args)))
+        (hash-set! cache args result)
+        (set! cached-result result)))
+    cached-result))
+
+(define-syntax define-memoized
+  (syntax-rules ()
+    ((_ (name . args) exp exp* ...)
+      (define name
+        (memoized-proc
+          (lambda args exp exp* ...))))))
 
 (define (range s n)
 ; List of integers >= s and < n.
@@ -34,6 +53,11 @@
     (if (<= i s)
       r
       (loop (1- i) (cons (1- i) r)))))
+
+(define (same n l)
+  (if (= l 0)
+    '()
+    (cons n (same n (1- l)))))
 
 (define (range-cycle s n)
 ; Improper list of integers >= s and < n.
@@ -51,6 +75,20 @@
             ls)
           (loop (cdr pair)))))))
 
+(define-memoized (pairing-function . ls)
+  ; Cantor pairing function. Maps a tuple of nonpositive integers to a unique
+  ; nonpositive integer.
+  (let loop ((ls ls))
+    (define k1 (car ls))
+    (define k2 (cadr ls))
+    (define rest (cddr ls))
+    (define p
+      (let ((k1+k2 (+ k1 k2)))
+        (+ (* (/ 1 2) k1+k2 (+ k1+k2 1)) k2)))
+    (if (null? rest)
+      p
+      (loop (cons p rest)))))
+
 (define (enumerate ls)
   (map
     cons
@@ -65,24 +103,6 @@
     (lambda (ls2)
       (map proc ls2))
     ls))
-
-(define (memoized-proc proc)
-  (define cache (make-hash-table))
-  (lambda args
-    ;(d (hash-count (const #t) cache))
-    (define cached-result (hash-ref cache args))
-    (when (eq? cached-result #f)
-      (let ((result (apply proc args)))
-        (hash-set! cache args result)
-        (set! cached-result result)))
-    cached-result))
-
-(define-syntax define-memoized
-  (syntax-rules ()
-    ((_ (name . args) exp exp* ...)
-      (define name
-        (memoized-proc
-          (lambda args exp exp* ...))))))
 
 (define (sum ls)
   (fold + 0 ls))
@@ -165,17 +185,24 @@
         (map (lambda (match) (reverse match)) day-pairs))
       first-round-days)))
 
-; Switching this to memoized changes the results!
-(define-memoized (get-rs . args)
-  (seed->random-state
-    (apply string-append
-      (map
-        (lambda (arg)
+(define-memoized (get-random-seed . args)
+  ; Don't memoize this procedure because the object it returns is stateful and
+  ; thus we don't want to cache it.
+  ; TODO: add a separator between the args otherwise different args lists can
+  ; result in the same result
+  (apply string-append
+    (map
+      (lambda (arg)
+        (string-append
           (cond
             ((number? arg) (number->string arg))
             ((symbol? arg) (symbol->string arg))
-            (else arg)))
-        (cons 2749828749824 args)))))
+            (else arg))
+          "~~~"))
+      (cons 2749828749824 args))))
+
+(define (get-random-state . args)
+  (seed->random-state (apply get-random-seed args)))
 
 (define (s2y s)
   (truncate/ s n-seconds-per-year))
@@ -198,13 +225,31 @@
       k
       (loop (if (< (random:uniform rs) p) (1+ k) k) (1+ i)))))
 
+;algorithm poisson random number (Knuth):
+;    init:
+;        Let L ← e−λ, k ← 0 and p ← 1.
+;    do:
+;        k ← k + 1.
+;        Generate uniform random number u in [0,1] and let p ← p × u.
+;    while p > L.
+;    return k − 1.
+(define (rand-poisson l rs)
+  (define L (exp (- l)))
+  (let loop ((k 1) (p (random:uniform rs)))
+    (if (< p L)
+      (1- k)
+      (loop (1+ k) (* p (random:uniform rs))))))
+
 (define (player-name player-id)
   player-id)
 
 (define-memoized (player-date-of-birth player-id)
-  (define rs (get-rs 'player-date-of-birth player-id))
+  (define rs (get-random-state 'player-date-of-birth player-id))
   (define age-years (+ 16 (* (random:uniform rs) 19)))
   (truncate (- conf-date-start (* age-years n-seconds-per-year))))
+
+(define-memoized (player-age player-id date)
+  (- date (player-date-of-birth player-id)))
 
 (define (adj-per-week-mplier age)
   (define age-years (s2y age))
@@ -235,20 +280,37 @@
             rs))))))
 
 (define-memoized (playerattr attr player-id date)
-  (define rs (get-rs 'playerattr player-id attr))
+  (define rs (get-random-state 'playerattr player-id attr))
   (define date-of-birth (player-date-of-birth player-id))
   (define age (- date date-of-birth))
   (playerattr-adj attr age rs))
 
-(define (player-team player-id)
-  (truncate/ player-id conf-n-players-per-team))
+(define-memoized (player-retired? player-id date)
+  (define date-start-of-year (* (truncate/ date n-seconds-per-year) n-seconds-per-year))
+  (define age-at-start-of-year (player-age player-id date-start-of-year))
+  (>= age-at-start-of-year retirement-age))
 
-(define (team-players team-id)
-  (let ((s (* team-id conf-n-players-per-team)))
-    (range s (+ s conf-n-players-per-team))))
+(define-memoized (team-n-players-promoted season)
+  (let loop ((current-season 0))
+    (if (= current-season season)
+      0
+;(define-memoized (team-players team-id date)
+;  (define season (s2y date))
+;  (let loop (
+;      (current-season 0)
+;      (players
+;        (map
+;          pairing-function
+;          (same team-id conf-n-players-per-team)
+;          (range 0 conf-n-players-per-team))))
+;    (if (= current-season season)
+;      players
+;      (loop
+;        (1+ current-season)
+        
 
 (define-memoized (team-starters team-id date)
-  (define players (team-players team-id))
+  (define players (team-players team-id date))
   (define total-proc
     (lambda (player-id)
       (+
@@ -348,7 +410,7 @@
 (define-memoized (match-result teams date)
   (define team1 (car teams))
   (define team2 (cadr teams))
-  (define rs (get-rs 'match-result team1 team2 date))
+  (define rs (get-random-state 'match-result team1 team2 date))
   (define att1 (team-attr 'att team1 date))
   (define att2 (team-attr 'att team2 date))
   (define def1 (team-attr 'def team1 date))
@@ -362,6 +424,15 @@
   (define score2 (rand-binomial p2 n rs))
   ;(d vel1 vel2 p1 p2 n score1 score2)
   ;(d "")
+  ;(d
+  ;  (apply -
+  ;    (map
+  ;      (lambda (team)
+  ;        (+ (team-attr 'att team date) (team-attr 'def team date)))
+  ;      teams))
+  ;  (list p1 p2)
+  ;  (list score1 score2)
+  ;)
   (list score1 score2))
 
 (define-memoized (division-schedule division season)
@@ -441,12 +512,17 @@
   (for-each
     (lambda (season)
       (d season)
-      (d (division-rankings 0 season) (+ (division-attr 'att 0 season) (division-attr 'def 0 season)))
-      (d (division-rankings 1 season) (+ (division-attr 'att 1 season) (division-attr 'def 1 season)))
-      (d (division-rankings 2 season) (+ (division-attr 'att 2 season) (division-attr 'def 2 season)))
-      (d (division-rankings 3 season) (+ (division-attr 'att 3 season) (division-attr 'def 3 season)))
-      (d (division-rankings 4 season) (+ (division-attr 'att 4 season) (division-attr 'def 4 season))))
-    (range 0 5))
+      (d (division-rankings 0 season)
+        (+ (division-attr 'att 0 season) (division-attr 'def 0 season)))
+      (d (division-rankings 1 season)
+        (+ (division-attr 'att 1 season) (division-attr 'def 1 season)))
+      (d (division-rankings 2 season)
+        (+ (division-attr 'att 2 season) (division-attr 'def 2 season)))
+      (d (division-rankings 3 season)
+        (+ (division-attr 'att 3 season) (division-attr 'def 3 season)))
+      (d (division-rankings 4 season)
+        (+ (division-attr 'att 4 season) (division-attr 'def 4 season))))
+    (range 0 3))
 )
 
 ;(use-modules (statprof))
