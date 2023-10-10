@@ -14,8 +14,13 @@
 (define conf-date-start 0)
 (define conf-n-divisions-per-country 5)
 (define conf-n-teams-per-division 6)
-(define conf-n-players-per-team 18)
-(define conf-n-players-in-match 11)
+(define conf-n-players-per-team 10)
+(define conf-n-players-in-match 5)
+
+(define mean-players-promoted-per-season 1.2)
+
+(define player-attr-names (list 'team 'creation-season 'creation-index))
+(define player-attr-names-n (length player-attr-names))
 
 (define retirement-age (* 34 n-seconds-per-year))
 
@@ -45,10 +50,6 @@
 
 (define (range s n)
 ; List of integers >= s and < n.
-  (unless (integer? s)
-    (error 'non-integer-s))
-  (unless (integer? n)
-    (error 'non-integer-n))
   (let loop ((i n) (r '()))
     (if (<= i s)
       r
@@ -78,16 +79,24 @@
 (define-memoized (pairing-function . ls)
   ; Cantor pairing function. Maps a tuple of nonpositive integers to a unique
   ; nonpositive integer.
-  (let loop ((ls ls))
-    (define k1 (car ls))
-    (define k2 (cadr ls))
-    (define rest (cddr ls))
-    (define p
-      (let ((k1+k2 (+ k1 k2)))
-        (+ (* (/ 1 2) k1+k2 (+ k1+k2 1)) k2)))
-    (if (null? rest)
-      p
-      (loop (cons p rest)))))
+  (define (p2 y x)
+    (let ((x+y (+ x y)))
+      (+ (* (/ 1 2) x+y (+ x+y 1)) y)))
+  (reduce p2 -1 ls))
+
+(define-memoized (inverse-pairing-function z n)
+  (define (ip2 z)
+    (let* (
+        (w (floor (* (/ 1 2) (- (sqrt (+ (* 8 z) 1)) 1))))
+        (t (* (/ 1 2) (+ (* w w) w)))
+        (y (- z t))
+        (x (- w y))
+        (r (list x y)))
+      r))
+  (let loop ((z z) (n n) (r '()))
+    (if (= n 2) (append (ip2 z) r)
+      (let ((h (ip2 z)))
+        (loop (car h) (1- n) (cons (cadr h) r))))))
 
 (define (enumerate ls)
   (map
@@ -204,10 +213,10 @@
 (define (get-random-state . args)
   (seed->random-state (apply get-random-seed args)))
 
-(define (s2y s)
+(define (secs-to-years s)
   (truncate/ s n-seconds-per-year))
 
-(define (y2s y)
+(define (years-to-secs y)
   (* y n-seconds-per-year))
 
 (define (rand-logistic loc sc rs)
@@ -225,34 +234,38 @@
       k
       (loop (if (< (random:uniform rs) p) (1+ k) k) (1+ i)))))
 
-;algorithm poisson random number (Knuth):
-;    init:
-;        Let L ← e−λ, k ← 0 and p ← 1.
-;    do:
-;        k ← k + 1.
-;        Generate uniform random number u in [0,1] and let p ← p × u.
-;    while p > L.
-;    return k − 1.
 (define (rand-poisson l rs)
+; Algorithm by Knuth
   (define L (exp (- l)))
   (let loop ((k 1) (p (random:uniform rs)))
     (if (< p L)
       (1- k)
       (loop (1+ k) (* p (random:uniform rs))))))
 
-(define (player-name player-id)
-  player-id)
+(define (player-name player-id) player-id)
+
+(define (player-id team creation-date creation-index)
+  (pairing-function team creation-date creation-index))
+
+(define (player-attrs player)
+  (inverse-pairing-function player player-attr-names-n))
+
+(define (player-attr player attr)
+  (list-ref (player-attrs player) (index player-attr-names attr)))  
 
 (define-memoized (player-date-of-birth player-id)
   (define rs (get-random-state 'player-date-of-birth player-id))
-  (define age-years (+ 16 (* (random:uniform rs) 19)))
-  (truncate (- conf-date-start (* age-years n-seconds-per-year))))
+  (define creation-season (player-attr player-id 'creation-season))
+  (define age-in-years-at-creation-season (+ 16 (* 17 (random:uniform rs))))
+  (define date-of-birth-in-years (- creation-season age-in-years-at-creation-season))
+  (define date-of-birth-in-seconds (years-to-secs date-of-birth-in-years))
+  date-of-birth-in-seconds)
 
 (define-memoized (player-age player-id date)
   (- date (player-date-of-birth player-id)))
 
 (define (adj-per-week-mplier age)
-  (define age-years (s2y age))
+  (define age-years (secs-to-years age))
   (cond
     ((< age-years 16)  1.5)
     ((< age-years 25)  1.0)
@@ -290,24 +303,40 @@
   (define age-at-start-of-year (player-age player-id date-start-of-year))
   (>= age-at-start-of-year retirement-age))
 
-(define-memoized (team-n-players-promoted season)
-  (let loop ((current-season 0))
-    (if (= current-season season)
-      0
-;(define-memoized (team-players team-id date)
-;  (define season (s2y date))
-;  (let loop (
-;      (current-season 0)
-;      (players
-;        (map
-;          pairing-function
-;          (same team-id conf-n-players-per-team)
-;          (range 0 conf-n-players-per-team))))
-;    (if (= current-season season)
-;      players
-;      (loop
-;        (1+ current-season)
-        
+(define-memoized (team-initial-players team-id)
+  (map player-id
+    (same team-id conf-n-players-per-team)
+    (same 0 conf-n-players-per-team)
+    (range 0 conf-n-players-per-team)))
+
+(define-memoized (player-retirement-season player)
+  (define dob (player-date-of-birth player))
+  (define date-on-which-reaches-retirement (+ dob retirement-age))
+  (truncate/ date-on-which-reaches-retirement n-seconds-per-year))
+
+(define-memoized (team-players team-id date)
+  (define season (secs-to-years date))
+  (let loop ((season season))
+    (if (= season 0)
+      (team-initial-players team-id)
+      (let (
+          (players-not-retired
+            (filter
+              (lambda (player)
+                (> (player-retirement-season player) (1- season)))
+              (loop (1- season)))))
+        (append players-not-retired
+          (map (lambda (i) (player-id team-id season i))
+            (range 0 (- conf-n-players-per-team (length players-not-retired)))))))))
+
+(for-each
+  (lambda (season)
+    (d (team-players 0 (years-to-secs season)))
+    (d (map (lambda (player) (secs-to-years (player-age player (years-to-secs season))))
+      (team-players 0 (years-to-secs season))))
+    (d))
+  (range 0 2500))
+(exit)
 
 (define-memoized (team-starters team-id date)
   (define players (team-players team-id date))
@@ -377,35 +406,33 @@
             (else division)))))))
 
 (define-memoized (division-teams division season)
-  (sort
-    (let loop (
-        (current-season 0)
-        (teams
-          (let ((s (* division conf-n-teams-per-division)))
-            (range s (+ s conf-n-teams-per-division)))))
-      (if (= season current-season)
-        teams
-        (loop
-          (1+ current-season)
-          (let* (
-              (div-rank (division-rank division))
-              (higher-div (higher-division division))
-              (lower-div (lower-division division))
-              (div-rankings
-                (division-rankings division current-season))
-              (higher-rankings
-                (if (null? higher-div) '() (division-rankings higher-div current-season)))
-              (lower-rankings
-                (if (null? lower-div) '() (division-rankings lower-div current-season))))
-            (append
-              (if (null? higher-rankings)
-                (take div-rankings 3)
-                (take-right higher-rankings 3))
-              (if (null? lower-rankings)
-                (take-right div-rankings 3)
-                (take lower-rankings 3))
-              (drop (drop-right div-rankings 3) 3))))))
-    <))
+  (let loop (
+      (current-season 0)
+      (teams
+        (let ((s (* division conf-n-teams-per-division)))
+          (range s (+ s conf-n-teams-per-division)))))
+    (if (= season current-season)
+      teams
+      (loop
+        (1+ current-season)
+        (let* (
+            (div-rank (division-rank division))
+            (higher-div (higher-division division))
+            (lower-div (lower-division division))
+            (div-rankings
+              (division-rankings division current-season))
+            (higher-rankings
+              (if (null? higher-div) '() (division-rankings higher-div current-season)))
+            (lower-rankings
+              (if (null? lower-div) '() (division-rankings lower-div current-season))))
+          (append
+            (if (null? higher-rankings)
+              (take div-rankings 3)
+              (take-right higher-rankings 3))
+            (if (null? lower-rankings)
+              (take-right div-rankings 3)
+              (take lower-rankings 3))
+            (drop (drop-right div-rankings 3) 3)))))))
 
 (define-memoized (match-result teams date)
   (define team1 (car teams))
