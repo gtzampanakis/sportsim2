@@ -8,8 +8,8 @@
 (define n-seconds-per-month (* n-seconds-per-day 30))
 (define n-seconds-per-year (* n-seconds-per-month 12))
 
-(define adj-per-week-base 0.001)
-(define sd-per-week-base 0.001)
+(define adj-base 0.001)
+(define sd-base 0.001)
 
 (define conf-date-start 0)
 (define conf-n-divisions-per-country 5)
@@ -19,8 +19,8 @@
 
 (define mean-players-promoted-per-season 1.2)
 
-(define player-attr-names (list 'team 'creation-season 'creation-index))
-(define player-attr-names-n (length player-attr-names))
+(define player-prop-names (list 'team 'creation-season 'creation-index))
+(define player-prop-names-n (length player-prop-names))
 
 (define retirement-age (* 34 n-seconds-per-year))
 
@@ -76,7 +76,7 @@
             ls)
           (loop (cdr pair)))))))
 
-(define-memoized (pairing-function . ls)
+(define (pairing-function . ls)
   ; Cantor pairing function. Maps a tuple of nonpositive integers to a unique
   ; nonpositive integer.
   (define (p2 y x)
@@ -84,7 +84,7 @@
       (+ (* (/ 1 2) x+y (+ x+y 1)) y)))
   (reduce p2 -1 ls))
 
-(define-memoized (inverse-pairing-function z n)
+(define (inverse-pairing-function z n)
   (define (ip2 z)
     (let* (
         (w (floor (* (/ 1 2) (- (sqrt (+ (* 8 z) 1)) 1))))
@@ -157,7 +157,7 @@
         (quotient i (car ns))
         (cons (remainder i (car ns)) as)))))
 
-(define-memoized (gen-round-robin n)
+(define (gen-round-robin n)
 ; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
   ; Call cdr to cycle once. This makes the schedule nicer-looking by having the
   ; 0 play the opponents in order.
@@ -247,24 +247,24 @@
 (define (player-id team creation-date creation-index)
   (pairing-function team creation-date creation-index))
 
-(define (player-attrs player)
-  (inverse-pairing-function player player-attr-names-n))
+(define (player-props player)
+  (inverse-pairing-function player player-prop-names-n))
 
-(define (player-attr player attr)
-  (list-ref (player-attrs player) (index player-attr-names attr)))  
+(define (player-prop player prop)
+  (list-ref (player-props player) (index player-prop-names prop)))  
 
-(define-memoized (player-date-of-birth player-id)
+(define (player-date-of-birth player-id)
   (define rs (get-random-state 'player-date-of-birth player-id))
-  (define creation-season (player-attr player-id 'creation-season))
+  (define creation-season (player-prop player-id 'creation-season))
   (define age-in-years-at-creation-season (+ 16 (* 17 (random:uniform rs))))
   (define date-of-birth-in-years (- creation-season age-in-years-at-creation-season))
   (define date-of-birth-in-seconds (years-to-secs date-of-birth-in-years))
   date-of-birth-in-seconds)
 
-(define-memoized (player-age player-id date)
+(define (player-age player-id date)
   (- date (player-date-of-birth player-id)))
 
-(define (adj-per-week-mplier age)
+(define (adj-mplier age)
   (define age-years (secs-to-years age))
   (cond
     ((< age-years 16)  1.5)
@@ -273,87 +273,90 @@
     ((< age-years 38) -1.0)
     (else             -2.0)))
 
-(define-memoized (playerattr-adj attr age rs)
-  (let loop ((current-age 0) (r 0))
-    (define mplier
-      (cond
-        ((eq? attr 'att) (adj-per-week-mplier current-age))
-        ((eq? attr 'def) (adj-per-week-mplier current-age))
-        ((eq? attr 'vel) 0.0)
-        (else (error attr))))
-    (if (> current-age age)
-      r
-      (loop
-        (+ current-age n-seconds-per-week)
-        (+
-          r
-          (rand-logistic
-            (* mplier adj-per-week-base)
-            sd-per-week-base
-            rs))))))
+(define-memoized (player-attr-adj attr age rs)
+  (if (<= age 0) 0
+    (let (
+        (mplier
+          (cond
+            ((eq? attr 'att) (adj-mplier age))
+            ((eq? attr 'def) (adj-mplier age))
+            ((eq? attr 'vel) 0.0)
+            (else (error attr)))))
+      (+
+        (player-attr-adj attr (- age n-seconds-per-year) rs)
+        (rand-logistic
+          (* mplier adj-base)
+          sd-base
+          rs)))))
 
-(define-memoized (playerattr attr player-id date)
-  (define rs (get-random-state 'playerattr player-id attr))
+(define-memoized (player-attr attr player-id date)
+  (define rs (get-random-state 'player-attr player-id attr))
   (define date-of-birth (player-date-of-birth player-id))
   (define age (- date date-of-birth))
-  (playerattr-adj attr age rs))
+  (player-attr-adj attr age rs))
 
-(define-memoized (player-retired? player-id date)
+;(for-each
+;  (lambda (player)
+;    (d player (player-attr 'att player (+ (player-date-of-birth player) (years-to-secs 25)))))
+;  (range 99999999900 99999999910))
+;(exit)
+
+(define (player-retired? player-id date)
   (define date-start-of-year (* (truncate/ date n-seconds-per-year) n-seconds-per-year))
   (define age-at-start-of-year (player-age player-id date-start-of-year))
   (>= age-at-start-of-year retirement-age))
 
-(define-memoized (team-initial-players team-id)
+(define (team-initial-players team-id)
   (map player-id
     (same team-id conf-n-players-per-team)
     (same 0 conf-n-players-per-team)
     (range 0 conf-n-players-per-team)))
 
-(define-memoized (player-retirement-season player)
+(define (player-retirement-season player)
   (define dob (player-date-of-birth player))
   (define date-on-which-reaches-retirement (+ dob retirement-age))
   (truncate/ date-on-which-reaches-retirement n-seconds-per-year))
 
 (define-memoized (team-players team-id date)
   (define season (secs-to-years date))
-  (let loop ((season season))
-    (if (= season 0)
-      (team-initial-players team-id)
-      (let (
-          (players-not-retired
-            (filter
-              (lambda (player)
-                (> (player-retirement-season player) (1- season)))
-              (loop (1- season)))))
-        (append players-not-retired
-          (map (lambda (i) (player-id team-id season i))
-            (range 0 (- conf-n-players-per-team (length players-not-retired)))))))))
-
-(for-each
-  (lambda (season)
-    (d (team-players 0 (years-to-secs season)))
-    (d (map (lambda (player) (secs-to-years (player-age player (years-to-secs season))))
-      (team-players 0 (years-to-secs season))))
-    (d))
-  (range 0 2500))
-(exit)
+  (if (= season 0)
+    (team-initial-players team-id)
+    (let (
+        (players-not-retired
+          (filter
+            (lambda (player)
+              (> (player-retirement-season player) (1- season)))
+            (team-players team-id (- date n-seconds-per-year)))))
+      (append players-not-retired
+        (map (lambda (i) (player-id team-id season i))
+          (range 0 (- conf-n-players-per-team (length players-not-retired))))))))
 
 (define-memoized (team-starters team-id date)
   (define players (team-players team-id date))
   (define total-proc
     (lambda (player-id)
       (+
-        (playerattr 'att player-id date)
-        (playerattr 'def player-id date))))
+        (player-attr 'att player-id date)
+        (player-attr 'def player-id date))))
   (define sorted (sort players (lambda (a b) (> (total-proc a) (total-proc b)))))
   (take sorted conf-n-players-in-match))
 
-(define-memoized (team-attr attr team-id date)
+;(for-each
+;  (lambda (season)
+;    (d (team-players 0 (years-to-secs season)))
+;    (d (map (lambda (player) (secs-to-years (player-age player (years-to-secs season))))
+;      (team-players 0 (years-to-secs season))))
+;    (d (team-starters 0 (years-to-secs season)))
+;    (d))
+;  (range 0 3000))
+;(exit)
+
+(define (team-starters-attr attr team-id date)
   (define starters (team-starters team-id date))
   (sum
     (map
       (lambda (player-id)
-        (playerattr attr player-id date))
+        (player-attr attr player-id date))
       starters))) 
 
 (define (division-id division-rank country-id)
@@ -384,7 +387,7 @@
     '()
     (division-id (1+ rank) country)))
 
-(define-memoized (team-division team season)
+(define (team-division team season)
   (let loop ((current-season 0) (division (quotient team conf-n-teams-per-division)))
     (if (= season current-season)
       division
@@ -405,7 +408,7 @@
               (lower-division division)))
             (else division)))))))
 
-(define-memoized (division-teams division season)
+(define (division-teams division season)
   (let loop (
       (current-season 0)
       (teams
@@ -434,35 +437,36 @@
               (take lower-rankings 3))
             (drop (drop-right div-rankings 3) 3)))))))
 
-(define-memoized (match-result teams date)
+(define (match-result teams date)
   (define team1 (car teams))
   (define team2 (cadr teams))
   (define rs (get-random-state 'match-result team1 team2 date))
-  (define att1 (team-attr 'att team1 date))
-  (define att2 (team-attr 'att team2 date))
-  (define def1 (team-attr 'def team1 date))
-  (define def2 (team-attr 'def team2 date))
-  (define vel1 (exp (team-attr 'vel team1 date)))
-  (define vel2 (exp (team-attr 'vel team2 date)))
+  (define att1 (team-starters-attr 'att team1 date))
+  (define att2 (team-starters-attr 'att team2 date))
+  (define def1 (team-starters-attr 'def team1 date))
+  (define def2 (team-starters-attr 'def team2 date))
+  (define vel1 (exp (team-starters-attr 'vel team1 date)))
+  (define vel2 (exp (team-starters-attr 'vel team2 date)))
   (define p1 (* 0.52 (logistic-cdf 0 1 (- att1 def2))))
   (define p2 (* 0.42 (logistic-cdf 0 1 (- att2 def1))))
   (define n (truncate (/ 11.5 (+ (/ 1. vel1) (/ 1. vel2)))))
   (define score1 (rand-binomial p1 n rs))
   (define score2 (rand-binomial p2 n rs))
-  ;(d vel1 vel2 p1 p2 n score1 score2)
-  ;(d "")
-  ;(d
-  ;  (apply -
-  ;    (map
-  ;      (lambda (team)
-  ;        (+ (team-attr 'att team date) (team-attr 'def team date)))
-  ;      teams))
-  ;  (list p1 p2)
-  ;  (list score1 score2)
-  ;)
+  ;(when #t
+  ;  (d vel1 vel2 p1 p2 n score1 score2)
+  ;  (d "")
+  ;  (d
+  ;    (apply -
+  ;      (map
+  ;        (lambda (team)
+  ;          (+ (team-starters-attr 'att team date) (team-starters-attr 'def team date)))
+  ;        teams))
+  ;    (list p1 p2)
+  ;    (list score1 score2)
+  ;  ))
   (list score1 score2))
 
-(define-memoized (division-schedule division season)
+(define (division-schedule division season)
   (define teams (division-teams division season))
   (define schedule-ords (gen-round-robin conf-n-teams-per-division))
   (define ord-to-team (lambda (ord) (list-ref teams ord)))
@@ -474,7 +478,7 @@
         day))
     schedule-ords))
 
-(define-memoized (division-results division season)
+(define (division-results division season)
   (define schedule (division-schedule division season))
   (map
     (lambda (day day-index)
@@ -486,7 +490,7 @@
     schedule
     (range 0 (length schedule))))
 
-(define-memoized (division-points division season)
+(define (division-points division season)
   (define teams (division-teams division season))
   (define schedule (flatten (division-schedule division season)))
   (define results (flatten (division-results division season)))
@@ -518,7 +522,7 @@
             points-granular))))
     teams))
 
-(define-memoized (division-rankings division season)
+(define (division-rankings division season)
   (define teams (division-teams division season))
   (define points (division-points division season))
   (define team-points-pairs (map cons teams points))
@@ -528,11 +532,11 @@
       (lambda (team-points-pair1 team-points-pair2)
         (> (cdr team-points-pair1) (cdr team-points-pair2))))))
 
-(define-memoized (division-attr attr division season)
+(define (division-attr attr division season)
   (sum
     (map
       (lambda (team)
-        (team-attr attr team (* season n-seconds-per-year)))
+        (team-starters-attr attr team (* season n-seconds-per-year)))
       (division-teams division season))))
 
 (define (main)
