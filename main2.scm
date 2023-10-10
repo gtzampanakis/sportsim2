@@ -314,7 +314,7 @@
     (same 0 conf-n-players-per-team)
     (range 0 conf-n-players-per-team)))
 
-(define (player-retirement-season player)
+(define-memoized (player-retirement-season player)
   (define dob (player-date-of-birth player))
   (define date-on-which-reaches-retirement (+ dob retirement-age))
   (truncate/ date-on-which-reaches-retirement n-seconds-per-year))
@@ -353,7 +353,7 @@
 ;  (range 0 3000))
 ;(exit)
 
-(define (team-starters-attr attr team-id date)
+(define-memoized (team-starters-attr attr team-id date)
   (define starters (team-starters team-id date))
   (sum
     (map
@@ -418,7 +418,7 @@
               (take lower-rankings 3))
             (drop (drop-right div-rankings 3) 3)))))))
 
-(define (match-result teams date)
+(define-memoized (match-result teams date)
   (define team1 (car teams))
   (define team2 (cadr teams))
   (define rs (get-random-state 'match-result team1 team2 date))
@@ -459,7 +459,7 @@
         day))
     schedule-ords))
 
-(define (division-results division season)
+(define-memoized (division-results division season)
   (define schedule (division-schedule division season))
   (map
     (lambda (day day-index)
@@ -471,7 +471,7 @@
     schedule
     (range 0 (length schedule))))
 
-(define (division-points division season)
+(define-memoized (division-points division season)
   (define teams (division-teams division season))
   (define schedule (flatten (division-schedule division season)))
   (define results (flatten (division-results division season)))
@@ -513,7 +513,7 @@
       (lambda (team-points-pair1 team-points-pair2)
         (> (cdr team-points-pair1) (cdr team-points-pair2))))))
 
-(define (division-attr attr division season)
+(define-memoized (division-attr attr division season)
   (sum
     (map
       (lambda (team)
