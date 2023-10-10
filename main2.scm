@@ -14,8 +14,8 @@
 (define conf-date-start 0)
 (define conf-n-divisions-per-country 5)
 (define conf-n-teams-per-division 6)
-(define conf-n-players-per-team 10)
-(define conf-n-players-in-match 5)
+(define conf-n-players-per-team 3)
+(define conf-n-players-in-match 2)
 
 (define mean-players-promoted-per-season 1.2)
 
@@ -157,7 +157,7 @@
         (quotient i (car ns))
         (cons (remainder i (car ns)) as)))))
 
-(define (gen-round-robin n)
+(define-memoized (gen-round-robin n)
 ; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
   ; Call cdr to cycle once. This makes the schedule nicer-looking by having the
   ; 0 play the opponents in order.
@@ -273,7 +273,9 @@
     ((< age-years 38) -1.0)
     (else             -2.0)))
 
-(define-memoized (player-attr-adj attr age rs)
+(define-memoized (player-attr-adj player-id attr age)
+  (define random-seed-args (list 'player-attr-adj player-id attr age))
+  (define rs (get-random-state (apply get-random-seed random-seed-args)))
   (if (<= age 0) 0
     (let (
         (mplier
@@ -283,17 +285,17 @@
             ((eq? attr 'vel) 0.0)
             (else (error attr)))))
       (+
-        (player-attr-adj attr (- age n-seconds-per-year) rs)
+        (player-attr-adj player-id attr (- age n-seconds-per-year))
         (rand-logistic
           (* mplier adj-base)
           sd-base
           rs)))))
 
 (define-memoized (player-attr attr player-id date)
-  (define rs (get-random-state 'player-attr player-id attr))
+  (define random-seed-args (list 0 'player-attr player-id attr))
   (define date-of-birth (player-date-of-birth player-id))
   (define age (- date date-of-birth))
-  (player-attr-adj attr age rs))
+  (player-attr-adj player-id attr age))
 
 ;(for-each
 ;  (lambda (player)
@@ -387,28 +389,7 @@
     '()
     (division-id (1+ rank) country)))
 
-(define (team-division team season)
-  (let loop ((current-season 0) (division (quotient team conf-n-teams-per-division)))
-    (if (= season current-season)
-      division
-      (let* (
-          (div-rank (division-rank division))
-          (rankings (division-rankings division current-season))
-          (team-ranking (index rankings team)))
-        (loop
-          (1+ current-season)
-          (cond
-            ((and
-                (> div-rank 0)
-                (< team-ranking 3))
-              (higher-division division))
-            ((and
-                (< div-rank (1- conf-n-divisions-per-country))
-                (>= team-ranking (- conf-n-teams-per-division))
-              (lower-division division)))
-            (else division)))))))
-
-(define (division-teams division season)
+(define-memoized (division-teams division season)
   (let loop (
       (current-season 0)
       (teams
@@ -466,7 +447,7 @@
   ;  ))
   (list score1 score2))
 
-(define (division-schedule division season)
+(define-memoized (division-schedule division season)
   (define teams (division-teams division season))
   (define schedule-ords (gen-round-robin conf-n-teams-per-division))
   (define ord-to-team (lambda (ord) (list-ref teams ord)))
@@ -553,9 +534,9 @@
         (+ (division-attr 'att 3 season) (division-attr 'def 3 season)))
       (d (division-rankings 4 season)
         (+ (division-attr 'att 4 season) (division-attr 'def 4 season))))
-    (range 0 3))
+    (range 0 30))
 )
 
-;(use-modules (statprof))
-;(statprof main)
-(main)
+(use-modules (statprof))
+(statprof main)
+;(main)
