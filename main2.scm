@@ -8,6 +8,7 @@
 (define n-seconds-per-month (* n-seconds-per-day 30))
 (define n-seconds-per-year (* n-seconds-per-month 12))
 
+(define adj-period n-seconds-per-year)
 (define adj-base 0.010)
 (define sd-base 0.010)
 
@@ -278,8 +279,8 @@
   (define rs (get-random-state (apply get-random-seed random-seed-args)))
   (rand-logistic 0 1 rs))
 
-(define-memoized (player-attr-adj player-id attr age)
-; Make this hit cache better.
+(define-memoized (player-attr-adj player-id attr age-in-adj-periods)
+  (define age (* age-in-adj-periods adj-period))
   (if (<= age 0)
     (player-initial-attr player-id attr)
     (let (
@@ -290,14 +291,8 @@
             ((eq? attr 'def) (adj-mplier age))
             ((eq? attr 'vel) 0.0)
             (else (error attr)))))
-      ;(d 'prev: (player-attr-adj player-id attr (- age n-seconds-per-year)))
-      ;(d '+adjustment: (rand-logistic
-      ;    (* mplier adj-base)
-      ;    sd-base
-      ;    rs))
-      ;(d)
       (+
-        (player-attr-adj player-id attr (- age n-seconds-per-year))
+        (player-attr-adj player-id attr (1- age-in-adj-periods))
         (rand-logistic
           (* mplier adj-base)
           sd-base
@@ -307,8 +302,7 @@
   (define random-seed-args (list 0 'player-attr player-id attr))
   (define date-of-birth (player-date-of-birth player-id))
   (define age (- date date-of-birth))
-  ;(d 'player-attr player-id attr date age (player-attr-adj player-id attr age))
-  (player-attr-adj player-id attr age))
+  (player-attr-adj player-id attr (truncate/ age adj-period)))
 
 (define (player-retired? player-id date)
   (define date-start-of-year (* (truncate/ date n-seconds-per-year) n-seconds-per-year))
@@ -522,16 +516,16 @@
     (lambda (season)
       (d season)
       (d (division-rankings 0 season)
-        (+ (division-starters-attr 'att 0 season) (division-starters-attr 'def 0 season)))
+        (+ (division-starters-attr 'att 5 season) (division-starters-attr 'def 5 season)))
       (d (division-rankings 1 season)
-        (+ (division-starters-attr 'att 1 season) (division-starters-attr 'def 1 season)))
+        (+ (division-starters-attr 'att 6 season) (division-starters-attr 'def 6 season)))
       (d (division-rankings 2 season)
-        (+ (division-starters-attr 'att 2 season) (division-starters-attr 'def 2 season)))
+        (+ (division-starters-attr 'att 7 season) (division-starters-attr 'def 7 season)))
       (d (division-rankings 3 season)
-        (+ (division-starters-attr 'att 3 season) (division-starters-attr 'def 3 season)))
+        (+ (division-starters-attr 'att 8 season) (division-starters-attr 'def 8 season)))
       (d (division-rankings 4 season)
-        (+ (division-starters-attr 'att 4 season) (division-starters-attr 'def 4 season))))
-    (range 0 6))
+        (+ (division-starters-attr 'att 9 season) (division-starters-attr 'def 9 season))))
+    (range 0 20))
 )
 
 ;(use-modules (statprof))
