@@ -8,14 +8,16 @@
 (define n-seconds-per-month (* n-seconds-per-day 30))
 (define n-seconds-per-year (* n-seconds-per-month 12))
 
-(define adj-base 0.001)
-(define sd-base 0.001)
+(define adj-base 0.010)
+(define sd-base 0.010)
 
 (define conf-date-start 0)
 (define conf-n-divisions-per-country 5)
-(define conf-n-teams-per-division 6)
-(define conf-n-players-per-team 3)
-(define conf-n-players-in-match 2)
+(define conf-n-teams-per-division 14)
+(define conf-n-players-per-team 9)
+(define conf-n-players-in-match 5)
+
+(define home-advantage-factor 1.1)
 
 (define mean-players-promoted-per-season 1.2)
 
@@ -197,8 +199,6 @@
 (define-memoized (get-random-seed . args)
   ; Don't memoize this procedure because the object it returns is stateful and
   ; thus we don't want to cache it.
-  ; TODO: add a separator between the args otherwise different args lists can
-  ; result in the same result
   (apply string-append
     (map
       (lambda (arg)
@@ -258,7 +258,7 @@
   (define creation-season (player-prop player-id 'creation-season))
   (define age-in-years-at-creation-season (+ 16 (* 17 (random:uniform rs))))
   (define date-of-birth-in-years (- creation-season age-in-years-at-creation-season))
-  (define date-of-birth-in-seconds (years-to-secs date-of-birth-in-years))
+  (define date-of-birth-in-seconds (truncate (years-to-secs date-of-birth-in-years)))
   date-of-birth-in-seconds)
 
 (define (player-age player-id date)
@@ -273,17 +273,29 @@
     ((< age-years 38) -1.0)
     (else             -2.0)))
 
-(define-memoized (player-attr-adj player-id attr age)
-  (define random-seed-args (list 'player-attr-adj player-id attr age))
+(define-memoized (player-initial-attr player-id attr)
+  (define random-seed-args (list 'player-initial-attr player-id attr))
   (define rs (get-random-state (apply get-random-seed random-seed-args)))
-  (if (<= age 0) 0
+  (rand-logistic 0 1 rs))
+
+(define-memoized (player-attr-adj player-id attr age)
+; Make this hit cache better.
+  (if (<= age 0)
+    (player-initial-attr player-id attr)
     (let (
+        (rs (get-random-state (get-random-seed 'player-attr-adj player-id attr age)))
         (mplier
           (cond
             ((eq? attr 'att) (adj-mplier age))
             ((eq? attr 'def) (adj-mplier age))
             ((eq? attr 'vel) 0.0)
             (else (error attr)))))
+      ;(d 'prev: (player-attr-adj player-id attr (- age n-seconds-per-year)))
+      ;(d '+adjustment: (rand-logistic
+      ;    (* mplier adj-base)
+      ;    sd-base
+      ;    rs))
+      ;(d)
       (+
         (player-attr-adj player-id attr (- age n-seconds-per-year))
         (rand-logistic
@@ -295,13 +307,8 @@
   (define random-seed-args (list 0 'player-attr player-id attr))
   (define date-of-birth (player-date-of-birth player-id))
   (define age (- date date-of-birth))
+  ;(d 'player-attr player-id attr date age (player-attr-adj player-id attr age))
   (player-attr-adj player-id attr age))
-
-;(for-each
-;  (lambda (player)
-;    (d player (player-attr 'att player (+ (player-date-of-birth player) (years-to-secs 25)))))
-;  (range 99999999900 99999999910))
-;(exit)
 
 (define (player-retired? player-id date)
   (define date-start-of-year (* (truncate/ date n-seconds-per-year) n-seconds-per-year))
@@ -342,16 +349,6 @@
         (player-attr 'def player-id date))))
   (define sorted (sort players (lambda (a b) (> (total-proc a) (total-proc b)))))
   (take sorted conf-n-players-in-match))
-
-;(for-each
-;  (lambda (season)
-;    (d (team-players 0 (years-to-secs season)))
-;    (d (map (lambda (player) (secs-to-years (player-age player (years-to-secs season))))
-;      (team-players 0 (years-to-secs season))))
-;    (d (team-starters 0 (years-to-secs season)))
-;    (d))
-;  (range 0 3000))
-;(exit)
 
 (define-memoized (team-starters-attr attr team-id date)
   (define starters (team-starters team-id date))
@@ -396,7 +393,7 @@
         (let ((s (* division conf-n-teams-per-division)))
           (range s (+ s conf-n-teams-per-division)))))
     (if (= season current-season)
-      teams
+      (sort teams <)
       (loop
         (1+ current-season)
         (let* (
@@ -428,7 +425,7 @@
   (define def2 (team-starters-attr 'def team2 date))
   (define vel1 (exp (team-starters-attr 'vel team1 date)))
   (define vel2 (exp (team-starters-attr 'vel team2 date)))
-  (define p1 (* 0.52 (logistic-cdf 0 1 (- att1 def2))))
+  (define p1 (* 0.42 (logistic-cdf 0 1 (- att1 def2)) home-advantage-factor))
   (define p2 (* 0.42 (logistic-cdf 0 1 (- att2 def1))))
   (define n (truncate (/ 11.5 (+ (/ 1. vel1) (/ 1. vel2)))))
   (define score1 (rand-binomial p1 n rs))
@@ -513,7 +510,7 @@
       (lambda (team-points-pair1 team-points-pair2)
         (> (cdr team-points-pair1) (cdr team-points-pair2))))))
 
-(define-memoized (division-attr attr division season)
+(define-memoized (division-starters-attr attr division season)
   (sum
     (map
       (lambda (team)
@@ -525,18 +522,18 @@
     (lambda (season)
       (d season)
       (d (division-rankings 0 season)
-        (+ (division-attr 'att 0 season) (division-attr 'def 0 season)))
+        (+ (division-starters-attr 'att 0 season) (division-starters-attr 'def 0 season)))
       (d (division-rankings 1 season)
-        (+ (division-attr 'att 1 season) (division-attr 'def 1 season)))
+        (+ (division-starters-attr 'att 1 season) (division-starters-attr 'def 1 season)))
       (d (division-rankings 2 season)
-        (+ (division-attr 'att 2 season) (division-attr 'def 2 season)))
+        (+ (division-starters-attr 'att 2 season) (division-starters-attr 'def 2 season)))
       (d (division-rankings 3 season)
-        (+ (division-attr 'att 3 season) (division-attr 'def 3 season)))
+        (+ (division-starters-attr 'att 3 season) (division-starters-attr 'def 3 season)))
       (d (division-rankings 4 season)
-        (+ (division-attr 'att 4 season) (division-attr 'def 4 season))))
-    (range 0 30))
+        (+ (division-starters-attr 'att 4 season) (division-starters-attr 'def 4 season))))
+    (range 0 6))
 )
 
-(use-modules (statprof))
-(statprof main)
-;(main)
+;(use-modules (statprof))
+;(statprof main)
+(main)
