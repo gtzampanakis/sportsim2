@@ -20,8 +20,6 @@
 
 (define home-advantage-factor 1.1)
 
-(define mean-players-promoted-per-season 1.2)
-
 (define player-prop-names (list 'team 'creation-season 'creation-index))
 (define player-prop-names-n (length player-prop-names))
 
@@ -33,6 +31,9 @@
       (lambda (arg) (display arg)(display " "))
       args)
     (newline)))
+
+(define (time)
+  (let ((p (gettimeofday))) (+ (car p) (/ (cdr p) 1000000.))))
 
 (define (memoized-proc proc)
   (define cache (make-hash-table))
@@ -101,20 +102,8 @@
       (let ((h (ip2 z)))
         (loop (car h) (1- n) (cons (cadr h) r))))))
 
-(define (enumerate ls)
-  (map
-    cons
-    ls
-    (range 0 (length ls))))
-
 (define (flatten ls)
   (fold append '() ls))
-
-(define (map-twice proc ls)
-  (map
-    (lambda (ls2)
-      (map proc ls2))
-    ls))
 
 (define (sum ls)
   (fold + 0 ls))
@@ -514,18 +503,21 @@
 (define (main)
   (for-each
     (lambda (season)
+      (define t0 (time))
       (d season)
-      (d (division-rankings 0 season)
+      (d (division-rankings 5 season)
         (+ (division-starters-attr 'att 5 season) (division-starters-attr 'def 5 season)))
-      (d (division-rankings 1 season)
+      (d (division-rankings 6 season)
         (+ (division-starters-attr 'att 6 season) (division-starters-attr 'def 6 season)))
-      (d (division-rankings 2 season)
+      (d (division-rankings 7 season)
         (+ (division-starters-attr 'att 7 season) (division-starters-attr 'def 7 season)))
-      (d (division-rankings 3 season)
+      (d (division-rankings 8 season)
         (+ (division-starters-attr 'att 8 season) (division-starters-attr 'def 8 season)))
-      (d (division-rankings 4 season)
-        (+ (division-starters-attr 'att 9 season) (division-starters-attr 'def 9 season))))
-    (range 0 20))
+      (d (division-rankings 9 season)
+        (+ (division-starters-attr 'att 9 season) (division-starters-attr 'def 9 season)))
+      (define t1 (time))
+      (d "time taken" (- t1 t0)))
+    (range 0 10))
 )
 
 ;(use-modules (statprof))
