@@ -14,9 +14,9 @@
 
 (define conf-date-start 0)
 (define conf-n-divisions-per-country 5)
-(define conf-n-teams-per-division 14)
-(define conf-n-players-per-team 9)
-(define conf-n-players-in-match 5)
+(define conf-n-teams-per-division 8)
+(define conf-n-players-per-team 4)
+(define conf-n-players-in-match 2)
 
 (define home-advantage-factor 1.1)
 
@@ -35,22 +35,64 @@
 (define (time)
   (let ((p (gettimeofday))) (+ (car p) (/ (cdr p) 1000000.))))
 
+; TODO:
+; player positions to affect their performance
+; salaries
+; finances
+; introduce countries
+; player nationalities to affect their initial and further attributes
+; dependence on country
+; lru data structure for the memoizer (maybe the entries evicted can be dropped altogether instead of saved to disk)
+
+;(define (memoized-proc proc)
+;  (define cache (make-hash-table))
+;  (lambda args
+;    (define cached-result (hash-ref cache args))
+;    (when (eq? cached-result #f)
+;      (let ((result (apply proc args)))
+;        (hash-set! cache args result)
+;        (set! cached-result result)))
+;    cached-result))
+
+; c1 c2 c3
+; 
 (define (memoized-proc proc)
-  (define cache (make-hash-table))
+; There should be strategies to keep one cached entry per season so that we can
+; easily go back if we wish so.
+  (define max-cache-size 50000)
+  (define key-to-cache-sublist (make-hash-table))
+  (define cache '())
+  (define cache-size 0)
+  (define cache-last-pair '())
   (lambda args
-    (define cached-result (hash-ref cache args))
-    (when (eq? cached-result #f)
-      (let ((result (apply proc args)))
-        (hash-set! cache args result)
-        (set! cached-result result)))
-    cached-result))
+    (define cache-sublist (hash-ref key-to-cache-sublist args))
+    (if (eq? cache-sublist #f)
+      (let* (
+          (proc-result (apply proc args))
+          (cache-entry (cons args proc-result)))
+        ; cache grows from the end
+        (if (null? cache)
+          (begin
+            (set! cache (list cache-entry))
+            (set! cache-last-pair cache))
+          (begin
+            (set-cdr! cache-last-pair (list cache-entry))
+            (set! cache-last-pair (cdr cache-last-pair))))
+        (set! cache-size (1+ cache-size))
+        (when (> cache-size max-cache-size)
+          (let ((args-to-forget (caar cache)))
+            (set! cache (cdr cache))
+            (hash-remove! key-to-cache-sublist args-to-forget)))
+        (hash-set! key-to-cache-sublist args cache-last-pair)
+        (cdr cache-entry))
+      (let ((cache-entry (car cache-sublist))) (cdr cache-entry)))))
 
 (define-syntax define-memoized
   (syntax-rules ()
-    ((_ (name . args) exp exp* ...)
+    ((_ (name . args) expr expr* ...)
       (define name
         (memoized-proc
-          (lambda args exp exp* ...))))))
+          (lambda args expr expr* ...))))))
 
 (define (range s n)
 ; List of integers >= s and < n.
@@ -398,33 +440,32 @@
               (take lower-rankings 3))
             (drop (drop-right div-rankings 3) 3)))))))
 
+(define-memoized (player-perf-on-date attr player date)
+  (define loc (player-attr attr player date))
+  (define rs (get-random-state 'player-perf-on-date attr player date))
+  (rand-logistic loc 0.05 rs))
+
+(define-memoized (team-starters-perf-on-date team attr date)
+  (sum
+    (map
+      (lambda (player) (player-perf-on-date attr player date))
+    (team-starters team date))))
+
 (define-memoized (match-result teams date)
   (define team1 (car teams))
   (define team2 (cadr teams))
   (define rs (get-random-state 'match-result team1 team2 date))
-  (define att1 (team-starters-attr 'att team1 date))
-  (define att2 (team-starters-attr 'att team2 date))
-  (define def1 (team-starters-attr 'def team1 date))
-  (define def2 (team-starters-attr 'def team2 date))
-  (define vel1 (exp (team-starters-attr 'vel team1 date)))
-  (define vel2 (exp (team-starters-attr 'vel team2 date)))
+  (define att1 (team-starters-perf-on-date team1 'att date))
+  (define att2 (team-starters-perf-on-date team2 'att date))
+  (define def1 (team-starters-perf-on-date team1 'def date))
+  (define def2 (team-starters-perf-on-date team2 'def date))
+  (define vel1 (team-starters-perf-on-date team1 'vel date))
+  (define vel2 (team-starters-perf-on-date team2 'vel date))
   (define p1 (* 0.42 (logistic-cdf 0 1 (- att1 def2)) home-advantage-factor))
   (define p2 (* 0.42 (logistic-cdf 0 1 (- att2 def1))))
-  (define n (truncate (/ 11.5 (+ (/ 1. vel1) (/ 1. vel2)))))
+  (define n (truncate (/ 11.5 (+ (/ 1. (exp vel1)) (/ 1. (exp vel2))))))
   (define score1 (rand-binomial p1 n rs))
   (define score2 (rand-binomial p2 n rs))
-  ;(when #t
-  ;  (d vel1 vel2 p1 p2 n score1 score2)
-  ;  (d "")
-  ;  (d
-  ;    (apply -
-  ;      (map
-  ;        (lambda (team)
-  ;          (+ (team-starters-attr 'att team date) (team-starters-attr 'def team date)))
-  ;        teams))
-  ;    (list p1 p2)
-  ;    (list score1 score2)
-  ;  ))
   (list score1 score2))
 
 (define-memoized (division-schedule division season)
@@ -517,7 +558,7 @@
         (+ (division-starters-attr 'att 9 season) (division-starters-attr 'def 9 season)))
       (define t1 (time))
       (d "time taken" (- t1 t0)))
-    (range 0 10))
+    (range 0 1000))
 )
 
 ;(use-modules (statprof))
