@@ -36,29 +36,15 @@
   (let ((p (gettimeofday))) (+ (car p) (/ (cdr p) 1000000.))))
 
 ; TODO:
+; cache strategies to keep one cached entry per season so that we can more easily go back as far as we want
 ; player positions to affect their performance
 ; salaries
 ; finances
 ; introduce countries
 ; player nationalities to affect their initial and further attributes
 ; dependence on country
-; lru data structure for the memoizer (maybe the entries evicted can be dropped altogether instead of saved to disk)
 
-;(define (memoized-proc proc)
-;  (define cache (make-hash-table))
-;  (lambda args
-;    (define cached-result (hash-ref cache args))
-;    (when (eq? cached-result #f)
-;      (let ((result (apply proc args)))
-;        (hash-set! cache args result)
-;        (set! cached-result result)))
-;    cached-result))
-
-; c1 c2 c3
-; 
 (define (memoized-proc proc)
-; There should be strategies to keep one cached entry per season so that we can
-; easily go back if we wish so.
   (define max-cache-size 50000)
   (define key-to-cache-sublist (make-hash-table))
   (define cache '())
