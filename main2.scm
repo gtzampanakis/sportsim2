@@ -70,7 +70,8 @@
       (let* (
           (proc-result (apply proc args))
           (cache-entry (cons args proc-result)))
-        ; cache grows from the end
+        ; cache grows from the end so we can easily drop the oldest records
+        ; from the front
         (if (null? cache)
           (begin
             (set! cache (list cache-entry))
@@ -82,7 +83,8 @@
         (when (> cache-size max-cache-size)
           (let ((args-to-forget (caar cache)))
             (set! cache (cdr cache))
-            (hash-remove! key-to-cache-sublist args-to-forget)))
+            (hash-remove! key-to-cache-sublist args-to-forget)
+            (set! cache-size (1- cache-size))))
         (hash-set! key-to-cache-sublist args cache-last-pair)
         (cdr cache-entry))
       (let ((cache-entry (car cache-sublist))) (cdr cache-entry)))))
