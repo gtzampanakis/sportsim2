@@ -1,5 +1,6 @@
 ;# vim: tabstop=2 shiftwidth=2
 (use-modules (srfi srfi-1))
+(use-modules (srfi srfi-43))
 (use-modules (ice-9 format))
 
 (define n-seconds-per-hour 3600)
@@ -135,11 +136,50 @@
 (define (flatten ls)
   (fold append '() ls))
 
+(define (proc-prepend-arg f)
+  (lambda args
+    (apply f (cdr args))))
+
 (define (sum ls)
   (fold + 0 ls))
 
 (define (prod ls)
   (fold * 1 ls))
+
+(define (vector-sum v)
+  (vector-fold + 0 v))
+
+(define (vector-prod v)
+  (vector-fold * 1 v))
+
+(define vector-map
+  (lambda (f . args)
+    (apply (@ (srfi srfi-43) vector-map) (cons (proc-prepend-arg f) args))))
+
+(define vector-fold
+  (lambda (f . args)
+    (apply (@ (srfi srfi-43) vector-fold) (cons (proc-prepend-arg f) args))))
+
+(define (vector-inner-prod . vs)
+  (vector-sum (apply vector-map (cons * vs))))
+
+(define (vector-wise proc . vs)
+  (apply vector-map proc vs))
+(define (vector+ . vs)
+  (apply vector-wise + vs))
+(define (vector- . vs)
+  (apply vector-wise - vs))
+(define (vector* . vs)
+  (apply vector-wise * vs))
+
+(define (matrix-wise proc . vs)
+  (apply vector-wise proc vs))
+(define (matrix+ . vs)
+  (apply matrix-wise vector+ vs))
+(define (matrix- . vs)
+  (apply matrix-wise vector- vs))
+(define (matrix* . vs)
+  (apply matrix-wise vector* vs))
 
 (define (index ls val)
   (let loop ((ls ls) (r 0))
