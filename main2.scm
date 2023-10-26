@@ -117,6 +117,7 @@
   (define (p2 y x)
     (let ((x+y (+ x y)))
       (+ (* (/ 1 2) x+y (+ x+y 1)) y)))
+  ; TODO: reduce uses weird order on the first function call. Check if this matters here.
   (reduce p2 -1 ls))
 
 (define (inverse-pairing-function z n)
@@ -146,40 +147,110 @@
 (define (prod ls)
   (fold * 1 ls))
 
-(define (vector-sum v)
-  (vector-fold + 0 v))
+; START MATRIX STUFF
+(define (vektor-display v)
+  (d v))
 
-(define (vector-prod v)
-  (vector-fold * 1 v))
+(define (vektor-sum v)
+  (fold + 0 v))
 
-(define vector-map
-  (lambda (f . args)
-    (apply (@ (srfi srfi-43) vector-map) (cons (proc-prepend-arg f) args))))
+(define (vektor-prod v)
+  (fold * 1 v))
 
-(define vector-fold
-  (lambda (f . args)
-    (apply (@ (srfi srfi-43) vector-fold) (cons (proc-prepend-arg f) args))))
+(define (vektor-scalar-prod a v)
+  (map (lambda (c) (* a c)) v))
 
-(define (vector-inner-prod . vs)
-  (vector-sum (apply vector-map (cons * vs))))
+(define (vektor-inner-prod . vs)
+  (sum (apply map * vs)))
 
-(define (vector-wise proc . vs)
-  (apply vector-map proc vs))
-(define (vector+ . vs)
-  (apply vector-wise + vs))
-(define (vector- . vs)
-  (apply vector-wise - vs))
-(define (vector* . vs)
-  (apply vector-wise * vs))
+(define (vektor-length v)
+  (sqrt (vektor-inner-prod v v)))
+
+(define (vektor-normalize v)
+  (vektor-scalar-prod (/ 1 (vektor-length v)) v))
+
+(define (matrix-display m)
+  (for-each d m))
+
+(define (vektor-wise proc . vs)
+  (apply map proc vs))
+(define (vektor+ . vs)
+  (apply vektor-wise + vs))
+(define (vektor- . vs)
+  (apply vektor-wise - vs))
+(define (vektor* . vs)
+  (apply vektor-wise * vs))
 
 (define (matrix-wise proc . vs)
-  (apply vector-wise proc vs))
+  (apply vektor-wise proc vs))
 (define (matrix+ . vs)
-  (apply matrix-wise vector+ vs))
+  (apply matrix-wise vektor+ vs))
 (define (matrix- . vs)
-  (apply matrix-wise vector- vs))
+  (apply matrix-wise vektor- vs))
 (define (matrix* . vs)
-  (apply matrix-wise vector* vs))
+  (apply matrix-wise vektor* vs))
+
+(define (matrix-transpose m)
+  (apply map list m))
+
+(define (matrix-dot . ms)
+  (define (matrix-dot-for-2 m1 m2)
+    (define m2t (matrix-transpose m2))
+    (map
+      (lambda (row)
+        (map
+          (lambda (col)
+            (vektor-inner-prod row col))
+          m2t))
+      m1))
+  (reduce-right matrix-dot-for-2 '() ms))
+
+(define (vektor-proj v v-to)
+  (vektor-scalar-prod
+    (/ (vektor-inner-prod v v-to) (vektor-inner-prod v-to v-to))
+    v-to))
+
+(define (gram-schmidt m)
+; This is the "classical" gram-schmidt according to wikipedia, which has some
+; numerical instability. See Wikipedia for a simple way to make it numerically
+; stable if this need arises.
+  (let loop ((m m) (r '()))
+    (if (null? m)
+      (map vektor-normalize r)
+      (let* (
+          (vi (car m))
+          (ui
+            (if (null? r) vi
+              (apply vektor- vi (map (lambda (u) (vektor-proj vi u)) r)))))
+        (loop (cdr m) (cons ui r))))))
+
+(define (qr-decomposition m)
+  (define q (gram-schmidt m))
+  (matrix-dot
+    q
+    (matrix-transpose m)))
+
+(define m '((3 1 8 -5) (2 2 3 -2) (-3 1 1 1) (1 2 3 4)))
+(matrix-display (gram-schmidt m))
+(d)
+(matrix-display (matrix-dot (gram-schmidt m) (matrix-transpose m)))
+(d)
+
+(define A '(
+  (1 0 0)
+  (0 1 0)
+  (0 0 1)
+))
+(define B '(
+  (1 2 1)
+  (2 3 1)
+  (4 2 2)
+))
+
+(matrix-display (matrix-dot A A A A A B A A A A))
+(exit)
+
+; END MATRIX STUFF
 
 (define (index ls val)
   (let loop ((ls ls) (r 0))
