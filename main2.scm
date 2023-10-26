@@ -218,7 +218,7 @@
 ; stable if this need arises.
   (let loop ((m m) (res '()))
     (if (null? m)
-      (map vektor-normalize (reverse res))
+      (matrix-transpose (map vektor-normalize (reverse res)))
       (let* (
           (vi (car m))
           (ui
@@ -227,8 +227,9 @@
         (loop (cdr m) (cons ui res))))))
 
 (define (qr-decomposition m)
-  (define q (gram-schmidt m))
-  (define r (matrix-dot m (matrix-transpose q)))
+  (define mt (matrix-transpose m))
+  (define q (gram-schmidt mt))
+  (define r (matrix-transpose (matrix-dot mt q)))
   (list q r))
 
 (define (qr-algorithm m)
@@ -238,9 +239,9 @@
   (matrix-display m)
   (matrix-display q)
   (matrix-display r)
-  (matrix-display (matrix-dot r q)))
+  (matrix-display (matrix-dot q r)))
 
-(define m '((3 1 8 -5) (2 2 3 -2) (-3 1 1 1) (1 2 3 4)))
+(define m '((-5 1 8 -5) (2 2 3 -2) (-3 1 1 1) (1 2 3 4)))
 (qr-algorithm m)
 
 (exit)
