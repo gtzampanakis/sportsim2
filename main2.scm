@@ -149,7 +149,8 @@
 
 ; START MATRIX STUFF
 (define (vektor-display v)
-  (d v))
+  (d v)
+  (d))
 
 (define (vektor-sum v)
   (fold + 0 v))
@@ -170,7 +171,8 @@
   (vektor-scalar-prod (/ 1 (vektor-length v)) v))
 
 (define (matrix-display m)
-  (for-each d m))
+  (for-each d m)
+  (d))
 
 (define (vektor-wise proc . vs)
   (apply map proc vs))
@@ -214,40 +216,33 @@
 ; This is the "classical" gram-schmidt according to wikipedia, which has some
 ; numerical instability. See Wikipedia for a simple way to make it numerically
 ; stable if this need arises.
-  (let loop ((m m) (r '()))
+  (let loop ((m m) (res '()))
     (if (null? m)
-      (map vektor-normalize r)
+      (map vektor-normalize (reverse res))
       (let* (
           (vi (car m))
           (ui
-            (if (null? r) vi
-              (apply vektor- vi (map (lambda (u) (vektor-proj vi u)) r)))))
-        (loop (cdr m) (cons ui r))))))
+            (if (null? res) vi
+              (apply vektor- vi (map (lambda (u) (vektor-proj vi u)) res)))))
+        (loop (cdr m) (cons ui res))))))
 
 (define (qr-decomposition m)
   (define q (gram-schmidt m))
-  (matrix-dot
-    q
-    (matrix-transpose m)))
+  (define r (matrix-dot m (matrix-transpose q)))
+  (list q r))
+
+(define (qr-algorithm m)
+  (define qr (qr-decomposition m))
+  (define q (car qr))
+  (define r (cadr qr))
+  (matrix-display m)
+  (matrix-display q)
+  (matrix-display r)
+  (matrix-display (matrix-dot r q)))
 
 (define m '((3 1 8 -5) (2 2 3 -2) (-3 1 1 1) (1 2 3 4)))
-(matrix-display (gram-schmidt m))
-(d)
-(matrix-display (matrix-dot (gram-schmidt m) (matrix-transpose m)))
-(d)
+(qr-algorithm m)
 
-(define A '(
-  (1 0 0)
-  (0 1 0)
-  (0 0 1)
-))
-(define B '(
-  (1 2 1)
-  (2 3 1)
-  (4 2 2)
-))
-
-(matrix-display (matrix-dot A A A A A B A A A A))
 (exit)
 
 ; END MATRIX STUFF
