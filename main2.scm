@@ -1,5 +1,6 @@
 ;# vim: tabstop=2 shiftwidth=2
 (use-modules (srfi srfi-1))
+(use-modules (srfi srfi-11))
 (use-modules (srfi srfi-43))
 (use-modules (ice-9 format))
 
@@ -170,9 +171,27 @@
 (define (vektor-normalize v)
   (vektor-scalar-prod (/ 1 (vektor-length v)) v))
 
+(define (vektor-set! v i n)
+  (list-set! v i n))
+
 (define (matrix-display m)
   (for-each d m)
   (d))
+
+(define (matrix-dim m)
+  (values (length m) (length (car m))))
+
+(define (matrix-index m i j)
+  (list-ref (list-ref m i) j))
+
+(define (matrix-set! m i j n)
+  (list-set! (list-ref m i) j n))
+
+(define (matrix-row m i)
+  (list-ref m i ))
+
+(define (matrix-row-set! m i row)
+  (list-set! m i row))
 
 (define (vektor-wise proc . vs)
   (apply map proc vs))
@@ -230,19 +249,83 @@
   (define mt (matrix-transpose m))
   (define q (gram-schmidt mt))
   (define r (matrix-transpose (matrix-dot mt q)))
-  (list q r))
+  (values q r))
 
 (define (qr-algorithm m)
-  (define qr (qr-decomposition m))
-  (define q (car qr))
-  (define r (cadr qr))
-  (matrix-display m)
+; Note that this does not always converge, for example it does not converge for
+; ((-1 2 5) (2 8 8) (1 8 9)). Such non-convergence happens when two eigenvalues
+; are equal or close to equal. We need to introduce shifts in order to overcome
+; this.
+  (define (stop? m new-m)
+    5)
+  (let loop ((m m) (i 0))
+    (when (< i 100)
+      ;(matrix-display m)
+      (let-values (
+          ((q r) (qr-decomposition m)))
+        (let* ((new-m (matrix-dot r q)))
+          (loop new-m (1+ i)))))))
+
+;(define A '(
+;  (-1 2 5)
+;  (2 8 8)
+;  (1 8 9)
+;))
+;(define A '(
+;  (2 1)
+;  (1 2)
+;))
+(define A '(
+  (2 0 0)
+  (2 1 0)
+  (5 3 1)
+))
+
+(let-values (((q r) (qr-decomposition A)))
   (matrix-display q)
   (matrix-display r)
-  (matrix-display (matrix-dot q r)))
+  (d))
+(exit)
 
-(define m '((-5 1 8 -5) (2 2 3 -2) (-3 1 1 1) (1 2 3 4)))
-(qr-algorithm m)
+(define (solve-linear-system a b)
+  (define-values (ma na) (matrix-dim a))
+  (define-values (q r) (qr-decomposition a))
+  (define c (matrix-dot (matrix-transpose q) (matrix-transpose (list b))))
+  (define augm (map (lambda (rrow crow) (append rrow crow)) r c))
+  (for-each
+    (lambda (this-row-i)
+      ; First subtract all lower rows so that all elements right to the
+      ; diagonal become 0.
+      (for-each
+        (lambda (other-row-i)
+          (matrix-row-set! augm this-row-i
+            (vektor+
+              (vektor-scalar-prod
+                (- (matrix-index augm this-row-i other-row-i))
+                (matrix-row augm other-row-i))
+              (matrix-row augm this-row-i))))
+        (range (1+ this-row-i) na))
+      ; Now divide the whole row by the diagonal so that the diagonal element
+      ; becomes 1.
+      (matrix-row-set! augm this-row-i
+        (vektor-scalar-prod
+          (/ (matrix-index augm this-row-i this-row-i))
+          (matrix-row augm this-row-i))))
+    (reverse (range 0 na)))
+  (car (reverse (matrix-transpose augm))))
+
+
+;(define A '((3 2 -1) (2 -2 4) (-1 1/2 -1)))
+;(define B '(1 -2 0))
+;(d (solve-linear-system A B))
+
+;(let-values (((q r) (qr-decomposition A)))
+;  (matrix-display A)
+;  (matrix-display q)
+;  (matrix-display r)
+;  (matrix-display (matrix-dot q r)))
+
+;(d (solve-linear-system A B))
 
 (exit)
 
