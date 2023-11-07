@@ -138,6 +138,19 @@
 (define (flatten ls)
   (fold append '() ls))
 
+(define (minabs-index ls)
+  (let loop ((ls ls) (c (inf)) (i 0) (r 0))
+    (if (null? ls)
+      r
+      (let* (
+          (a (abs (car ls)))
+          (o (< a c)))
+        (loop
+          (cdr ls)
+          (if o a c)
+          (1+ i)
+          (if o i r))))))
+
 (define (proc-prepend-arg f)
   (lambda args
     (apply f (cdr args))))
@@ -159,7 +172,10 @@
 (define (vektor-prod v)
   (fold * 1 v))
 
-(define (vektor-scalar-prod a v)
+(define (vektor-random l)
+	(map (lambda (_) (random:uniform)) (range 0 l)))
+
+(define (vektor-scalar-prod v a)
   (map (lambda (c) (* a c)) v))
 
 (define (vektor-inner-prod . vs)
@@ -169,10 +185,16 @@
   (sqrt (vektor-inner-prod v v)))
 
 (define (vektor-normalize v)
-  (vektor-scalar-prod (/ 1 (vektor-length v)) v))
+  (vektor-scalar-prod v (/ 1 (vektor-length v))))
 
 (define (vektor-set! v i n)
   (list-set! v i n))
+
+(define (matrix-scalar-prod m a)
+  (map
+    (lambda (row)
+      (vektor-scalar-prod row a))
+    m))
 
 (define (matrix-display m)
   (for-each d m)
@@ -183,6 +205,55 @@
 
 (define (matrix-index m i j)
   (list-ref (list-ref m i) j))
+
+(define (matrix-zeros r c)
+  (map
+    (lambda (_) (make-list c 0))
+    (range 0 r)))
+
+(define (matrix-random r c)
+	(map
+		(lambda (_) (vektor-random c))
+    (range 0 r)))
+
+(define (matrix-symmetric-random d)
+  (define m (matrix-zeros d d))
+  (for-each
+    (lambda (i)
+      (for-each
+        (lambda (j)
+          (if (<= i j)
+            (let ((v (random:uniform)))
+              (matrix-set! m i j v)
+              (matrix-set! m j i v))))
+        (range 0 d)))
+      (range 0 d))
+  m)
+
+(define (matrix-identity d)
+  (define m (matrix-zeros d d))
+  (for-each
+    (lambda (i)
+      (matrix-set! m i i 1))
+    (range 0 d))
+  m)
+
+(define (matrix-diag m)
+  (map
+    (lambda (row i)
+      (matrix-index m i i))
+    m
+    (range 0 (matrix-dim m))))
+
+(define (matrix-diagonal-with-given-diag diag)
+  (define ld (length diag))
+  (define m (matrix-zeros ld ld))
+  (for-each
+    (lambda (i val)
+      (matrix-set! m i i val))
+    (range 0 ld)
+    diag)
+  m)
 
 (define (matrix-set! m i j n)
   (list-set! (list-ref m i) j n))
@@ -228,8 +299,8 @@
 
 (define (vektor-proj v v-to)
   (vektor-scalar-prod
-    (/ (vektor-inner-prod v v-to) (vektor-inner-prod v-to v-to))
-    v-to))
+    v-to
+    (/ (vektor-inner-prod v v-to) (vektor-inner-prod v-to v-to))))
 
 (define (gram-schmidt m)
 ; This is the "classical" gram-schmidt according to wikipedia, which has some
@@ -245,6 +316,22 @@
               (apply vektor- vi (map (lambda (u) (vektor-proj vi u)) res)))))
         (loop (cdr m) (cons ui res))))))
 
+(define (matrix-subdiagonal-abs-sum m)
+  (define-values (r c) (matrix-dim m))
+  (define s 0)
+  (for-each
+    (lambda (j)
+      (for-each
+        (lambda (i)
+          (when (< j i)
+            (set! s (+ s (abs (matrix-index m i j))))))
+        (range 0 r)))
+    (range 0 c))
+  s)
+
+(define (matrix-map proc m)
+  (map (lambda (row) (map proc row)) m))
+
 (define (qr-decomposition m)
   (define mt (matrix-transpose m))
   (define q (gram-schmidt mt))
@@ -254,38 +341,38 @@
 (define (qr-algorithm m)
 ; Note that this does not always converge, for example it does not converge for
 ; ((-1 2 5) (2 8 8) (1 8 9)). Such non-convergence happens when two eigenvalues
-; are equal or close to equal. We need to introduce shifts in order to overcome
-; this.
-  (define (stop? m new-m)
-    5)
-  (let loop ((m m) (i 0))
-    (when (< i 100)
-      ;(matrix-display m)
-      (let-values (
-          ((q r) (qr-decomposition m)))
+; are equal or close to equal. We can introduce shifts in order to overcome
+; this. But it appears that the algorithm does converge for most symmetric
+; matrices and this is the only ones we care about.
+  (let loop ((m m) (q-comp (matrix-identity (matrix-dim m))) (i 0))
+    (if (or (> i 50000) (< (matrix-subdiagonal-abs-sum m) 1e-20))
+      (list (matrix-diag m) q-comp)
+		  (let-values (
+		   	 ((q r) (qr-decomposition m)))
         (let* ((new-m (matrix-dot r q)))
-          (loop new-m (1+ i)))))))
+          (loop new-m (matrix-dot q-comp q) (1+ i)))))))
 
+;;(define A '(
+;;  (-1 2 5)
+;;  (2 8 8)
+;;  (1 8 9)
+;;))
 ;(define A '(
-;  (-1 2 5)
-;  (2 8 8)
-;  (1 8 9)
+;  (5 3 -2)
+;  (3 5 9)
+;  (-2 9 8)
 ;))
-;(define A '(
-;  (2 1)
-;  (1 2)
-;))
-(define A '(
-  (2 0 0)
-  (2 1 0)
-  (5 3 1)
-))
-
-(let-values (((q r) (qr-decomposition A)))
-  (matrix-display q)
-  (matrix-display r)
-  (d))
-(exit)
+;
+;(define vq (qr-algorithm A))
+;(define v (car vq))
+;(define q (cadr vq))
+;(matrix-display A)
+;(matrix-display
+;  (matrix-dot
+;    q
+;    (matrix-diagonal-with-given-diag v)
+;    (matrix-transpose q)))
+;(exit)
 
 (define (solve-linear-system a b)
   (define-values (ma na) (matrix-dim a))
@@ -301,16 +388,16 @@
           (matrix-row-set! augm this-row-i
             (vektor+
               (vektor-scalar-prod
-                (- (matrix-index augm this-row-i other-row-i))
-                (matrix-row augm other-row-i))
+                (matrix-row augm other-row-i)
+                (- (matrix-index augm this-row-i other-row-i)))
               (matrix-row augm this-row-i))))
         (range (1+ this-row-i) na))
       ; Now divide the whole row by the diagonal so that the diagonal element
       ; becomes 1.
       (matrix-row-set! augm this-row-i
         (vektor-scalar-prod
-          (/ (matrix-index augm this-row-i this-row-i))
-          (matrix-row augm this-row-i))))
+          (matrix-row augm this-row-i)
+          (/ (matrix-index augm this-row-i this-row-i)))))
     (reverse (range 0 na)))
   (car (reverse (matrix-transpose augm))))
 
@@ -326,8 +413,6 @@
 ;  (matrix-display (matrix-dot q r)))
 
 ;(d (solve-linear-system A B))
-
-(exit)
 
 ; END MATRIX STUFF
 
@@ -451,6 +536,21 @@
     (if (< p L)
       (1- k)
       (loop (1+ k) (* p (random:uniform rs))))))
+
+(define (rand-mult-normal mean sigma rs)
+  (define z (map (lambda (_) (random:normal)) (range 0 (length mean))))
+  (define lu (qr-algorithm sigma))
+  (define l (car lu))
+  (define u (cadr lu))
+  (define A (matrix-dot u (matrix-diagonal-with-given-diag (map sqrt l))))
+  (define result
+    (vektor+
+      mean
+      (car (matrix-transpose (matrix-dot A (matrix-transpose (list z)))))))
+  result)
+
+(d (rand-mult-normal '(0 0) '((1 0) (0 1)) *random-state*))
+(exit)
 
 (define (player-name player-id) player-id)
 
