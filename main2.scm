@@ -27,6 +27,19 @@
 
 (define retirement-age (* 34 n-seconds-per-year))
 
+(define attrs (list
+  'att 'def 'vel
+))
+
+; vel is the preference of a player to play fast or slow, not his
+; capability to play fast. So it is uncorrelated to attributes that stem
+; from his ability.
+(define attr-correlations (list
+  (cons (list 'att 'def) 0.9)
+  (cons (list 'att 'vel) 0.0)
+  (cons (list 'def 'vel) 0.0)
+))
+
 (define d
   (lambda args
     (for-each
@@ -166,6 +179,9 @@
   (d v)
   (d))
 
+(define (vektor-zeros l)
+  (make-list l 0))
+
 (define (vektor-sum v)
   (fold + 0 v))
 
@@ -264,8 +280,23 @@
 (define (matrix-row-set! m i row)
   (list-set! m i row))
 
+(define (broadcast vs)
+  (define m
+    (apply max
+      (map
+        (lambda (v)
+          (if (number? v)
+            1
+            (length v)))
+        vs)))
+  (map
+    (lambda (v)
+      (if (number? v)
+        (make-list m v)
+        v))
+    vs))
 (define (vektor-wise proc . vs)
-  (apply map proc vs))
+  (apply map proc (broadcast vs)))
 (define (vektor+ . vs)
   (apply vektor-wise + vs))
 (define (vektor- . vs)
@@ -352,28 +383,6 @@
         (let* ((new-m (matrix-dot r q)))
           (loop new-m (matrix-dot q-comp q) (1+ i)))))))
 
-;;(define A '(
-;;  (-1 2 5)
-;;  (2 8 8)
-;;  (1 8 9)
-;;))
-;(define A '(
-;  (5 3 -2)
-;  (3 5 9)
-;  (-2 9 8)
-;))
-;
-;(define vq (qr-algorithm A))
-;(define v (car vq))
-;(define q (cadr vq))
-;(matrix-display A)
-;(matrix-display
-;  (matrix-dot
-;    q
-;    (matrix-diagonal-with-given-diag v)
-;    (matrix-transpose q)))
-;(exit)
-
 (define (solve-linear-system a b)
   (define-values (ma na) (matrix-dim a))
   (define-values (q r) (qr-decomposition a))
@@ -401,20 +410,26 @@
     (reverse (range 0 na)))
   (car (reverse (matrix-transpose augm))))
 
-
-;(define A '((3 2 -1) (2 -2 4) (-1 1/2 -1)))
-;(define B '(1 -2 0))
-;(d (solve-linear-system A B))
-
-;(let-values (((q r) (qr-decomposition A)))
-;  (matrix-display A)
-;  (matrix-display q)
-;  (matrix-display r)
-;  (matrix-display (matrix-dot q r)))
-
-;(d (solve-linear-system A B))
-
 ; END MATRIX STUFF
+
+(define attrs-covariance
+  (let* (
+      (la (length attrs))
+      (sigma (matrix-identity la)))
+    (for-each
+      (lambda (i)
+        (define attr-i (list-ref attrs i))
+        (for-each
+          (lambda (j)
+            (define attr-j (list-ref attrs j))
+            (define corr (assoc-ref attr-correlations (list attr-i attr-j)))
+            (matrix-set! sigma i j corr)
+            (matrix-set! sigma j i corr))
+          (range (1+ i) la)))
+      (range 0 la))
+    sigma))
+
+(matrix-display attrs-covariance)
 
 (define (index ls val)
   (let loop ((ls ls) (r 0))
@@ -538,19 +553,16 @@
       (loop (1+ k) (* p (random:uniform rs))))))
 
 (define (rand-mult-normal mean sigma rs)
-  (define z (map (lambda (_) (random:normal)) (range 0 (length mean))))
-  (define lu (qr-algorithm sigma))
-  (define l (car lu))
-  (define u (cadr lu))
-  (define A (matrix-dot u (matrix-diagonal-with-given-diag (map sqrt l))))
+  (define z (map (lambda (_) (random:normal)) (range 0 (matrix-dim sigma))))
+  (define vq (qr-algorithm sigma))
+  (define v (car vq))
+  (define q (cadr vq))
+  (define A (matrix-dot q (matrix-diagonal-with-given-diag (map sqrt v))))
   (define result
     (vektor+
       mean
       (car (matrix-transpose (matrix-dot A (matrix-transpose (list z)))))))
   result)
-
-(d (rand-mult-normal '(0 0) '((1 0) (0 1)) *random-state*))
-(exit)
 
 (define (player-name player-id) player-id)
 
@@ -836,7 +848,7 @@
         (+ (division-starters-attr 'att 9 season) (division-starters-attr 'def 9 season)))
       (define t1 (time))
       (d "time taken" (- t1 t0)))
-    (range 0 1000))
+    (range 0 100))
 )
 
 ;(use-modules (statprof))
