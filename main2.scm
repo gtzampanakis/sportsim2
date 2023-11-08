@@ -27,7 +27,7 @@
 
 (define retirement-age (* 34 n-seconds-per-year))
 
-(define attrs (list
+(define attr-names (list
   'att 'def 'vel
 ))
 
@@ -414,14 +414,14 @@
 
 (define attrs-covariance
   (let* (
-      (la (length attrs))
+      (la (length attr-names))
       (sigma (matrix-identity la)))
     (for-each
       (lambda (i)
-        (define attr-i (list-ref attrs i))
+        (define attr-i (list-ref attr-names i))
         (for-each
           (lambda (j)
-            (define attr-j (list-ref attrs j))
+            (define attr-j (list-ref attr-names j))
             (define corr (assoc-ref attr-correlations (list attr-i attr-j)))
             (matrix-set! sigma i j corr)
             (matrix-set! sigma j i corr))
@@ -429,7 +429,6 @@
       (range 0 la))
     sigma))
 
-(matrix-display attrs-covariance)
 
 (define (index ls val)
   (let loop ((ls ls) (r 0))
@@ -595,10 +594,14 @@
     ((< age-years 38) -1.0)
     (else             -2.0)))
 
+(define-memoized (player-initial-attrs player-id)
+  (define rs (get-random-state 'player-initial-attrs player-id))
+  (define vals (rand-mult-normal 0 attrs-covariance rs))
+  vals)
+
 (define-memoized (player-initial-attr player-id attr)
-  (define random-seed-args (list 'player-initial-attr player-id attr))
-  (define rs (get-random-state (apply get-random-seed random-seed-args)))
-  (rand-logistic 0 1 rs))
+  (define attrs (player-initial-attrs player-id))
+  (list-ref attrs (index attr-names attr)))
 
 (define-memoized (player-attr-adj player-id attr age-in-adj-periods)
   (define age (* age-in-adj-periods adj-period))
