@@ -552,7 +552,7 @@
       (loop (1+ k) (* p (random:uniform rs))))))
 
 (define (rand-mult-normal mean sigma rs)
-  (define z (map (lambda (_) (random:normal)) (range 0 (matrix-dim sigma))))
+  (define z (map (lambda (_) (random:normal rs)) (range 0 (matrix-dim sigma))))
   (define vq (qr-algorithm sigma))
   (define v (car vq))
   (define q (cadr vq))
@@ -599,34 +599,23 @@
   (define vals (rand-mult-normal 0 attrs-covariance rs))
   vals)
 
-(define-memoized (player-initial-attr player-id attr)
-  (define attrs (player-initial-attrs player-id))
-  (list-ref attrs (index attr-names attr)))
+(define-memoized (player-attrs-by-age-in-adj-periods player-id age-in-adj-periods)
+  (let loop ((age-in-adj-periods age-in-adj-periods))
+    (if (<= age-in-adj-periods 0)
+      (player-initial-attrs player-id)
+      (rand-mult-normal
+        (player-attrs-by-age-in-adj-periods player-id (- age-in-adj-periods 1))
+        attrs-covariance
+        (get-random-state 'player-attrs player-id age-in-adj-periods)))))
 
-(define-memoized (player-attr-adj player-id attr age-in-adj-periods)
-  (define age (* age-in-adj-periods adj-period))
-  (if (<= age 0)
-    (player-initial-attr player-id attr)
-    (let (
-        (rs (get-random-state (get-random-seed 'player-attr-adj player-id attr age)))
-        (mplier
-          (cond
-            ((eq? attr 'att) (adj-mplier age))
-            ((eq? attr 'def) (adj-mplier age))
-            ((eq? attr 'vel) 0.0)
-            (else (error attr)))))
-      (+
-        (player-attr-adj player-id attr (1- age-in-adj-periods))
-        (rand-logistic
-          (* mplier adj-base)
-          sd-base
-          rs)))))
+(define (player-attrs player-id date)
+  (player-attrs-by-age-in-adj-periods
+    player-id
+    (truncate/ (player-age player-id date) adj-period)))
 
 (define-memoized (player-attr attr player-id date)
-  (define random-seed-args (list 0 'player-attr player-id attr))
-  (define date-of-birth (player-date-of-birth player-id))
-  (define age (- date date-of-birth))
-  (player-attr-adj player-id attr (truncate/ age adj-period)))
+  (define attrs (player-attrs player-id date))
+  (list-ref attrs (index attr-names attr)))
 
 (define (player-retired? player-id date)
   (define date-start-of-year (* (truncate/ date n-seconds-per-year) n-seconds-per-year))
