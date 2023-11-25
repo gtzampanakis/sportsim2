@@ -1,4 +1,3 @@
-;# vim: tabstop=2 shiftwidth=2
 (use-modules (srfi srfi-1))
 (use-modules (srfi srfi-11))
 (use-modules (srfi srfi-43))
@@ -51,13 +50,14 @@
   (let ((p (gettimeofday))) (+ (car p) (/ (cdr p) 1000000.))))
 
 ; TODO:
-; cache strategies to keep one cached entry per season so that we can more easily go back as far as we want
-; player positions to affect their performance
-; salaries
-; finances
-; introduce countries
-; player nationalities to affect their initial and further attributes
-; dependence on country
+; * cache strategies to keep one cached entry per season so that we can more
+; easily go back as far as we want
+; * player positions to affect their performance
+; * salaries
+; * finances
+; * introduce countries
+; * player nationalities to affect their initial and further attributes
+; * dependence on country
 
 (define (memoized-proc proc)
   (define max-cache-size 50000)
@@ -131,7 +131,8 @@
   (define (p2 y x)
     (let ((x+y (+ x y)))
       (+ (* (/ 1 2) x+y (+ x+y 1)) y)))
-  ; TODO: reduce uses weird order on the first function call. Check if this matters here.
+  ; TODO: reduce uses weird order on the first function call. Check if this
+  ; matters here.
   (reduce p2 -1 ls))
 
 (define (inverse-pairing-function z n)
@@ -578,8 +579,10 @@
   (define rs (get-random-state 'player-date-of-birth player-id))
   (define creation-season (player-prop player-id 'creation-season))
   (define age-in-years-at-creation-season (+ 16 (* 17 (random:uniform rs))))
-  (define date-of-birth-in-years (- creation-season age-in-years-at-creation-season))
-  (define date-of-birth-in-seconds (truncate (years-to-secs date-of-birth-in-years)))
+  (define date-of-birth-in-years
+    (- creation-season age-in-years-at-creation-season))
+  (define date-of-birth-in-seconds
+    (truncate (years-to-secs date-of-birth-in-years)))
   date-of-birth-in-seconds)
 
 (define (player-age player-id date)
@@ -599,26 +602,39 @@
   (define vals (rand-mult-normal 0 attrs-covariance rs))
   vals)
 
-(define-memoized (player-attrs-by-age-in-adj-periods player-id age-in-adj-periods)
-  (let loop ((age-in-adj-periods age-in-adj-periods))
-    (if (<= age-in-adj-periods 0)
-      (player-initial-attrs player-id)
-      (rand-mult-normal
-        (player-attrs-by-age-in-adj-periods player-id (- age-in-adj-periods 1))
-        attrs-covariance
-        (get-random-state 'player-attrs player-id age-in-adj-periods)))))
+; The age is in adj-periods to aid memoization.
+(define-memoized (player-attrs-by-age-in-adj-periods
+                   player-id age-in-adj-periods)
+  (if (<= age-in-adj-periods 0)
+    (player-initial-attrs player-id)
+    (matrix+
+      (player-attrs-by-age-in-adj-periods player-id (- age-in-adj-periods 1))
+      (matrix*
+        0.05
+        (rand-mult-normal
+          0
+          attrs-covariance
+          (get-random-state 'player-attrs player-id age-in-adj-periods))))))
 
 (define (player-attrs player-id date)
   (player-attrs-by-age-in-adj-periods
     player-id
     (truncate/ (player-age player-id date) adj-period)))
 
+(d (player-attrs 5 (* 0 adj-period)))
+(d (player-attrs 5 (* 1 adj-period)))
+(d (player-attrs 5 (* 2 adj-period)))
+(d (player-attrs 5 (* 3 adj-period)))
+(d (player-attrs 5 (* 4 adj-period)))
+(exit)
+
 (define-memoized (player-attr attr player-id date)
   (define attrs (player-attrs player-id date))
   (list-ref attrs (index attr-names attr)))
 
 (define (player-retired? player-id date)
-  (define date-start-of-year (* (truncate/ date n-seconds-per-year) n-seconds-per-year))
+  (define date-start-of-year
+    (* (truncate/ date n-seconds-per-year) n-seconds-per-year))
   (define age-at-start-of-year (player-age player-id date-start-of-year))
   (>= age-at-start-of-year retirement-age))
 
@@ -645,7 +661,8 @@
             (team-players team-id (- date n-seconds-per-year)))))
       (append players-not-retired
         (map (lambda (i) (player-id team-id season i))
-          (range 0 (- conf-n-players-per-team (length players-not-retired))))))))
+          (range
+            0 (- conf-n-players-per-team (length players-not-retired))))))))
 
 (define-memoized (team-starters team-id date)
   (define players (team-players team-id date))
@@ -654,7 +671,8 @@
       (+
         (player-attr 'att player-id date)
         (player-attr 'def player-id date))))
-  (define sorted (sort players (lambda (a b) (> (total-proc a) (total-proc b)))))
+  (define sorted
+    (sort players (lambda (a b) (> (total-proc a) (total-proc b)))))
   (take sorted conf-n-players-in-match))
 
 (define-memoized (team-starters-attr attr team-id date)
@@ -710,9 +728,11 @@
             (div-rankings
               (division-rankings division current-season))
             (higher-rankings
-              (if (null? higher-div) '() (division-rankings higher-div current-season)))
+              (if (null? higher-div)
+                '() (division-rankings higher-div current-season)))
             (lower-rankings
-              (if (null? lower-div) '() (division-rankings lower-div current-season))))
+              (if (null? lower-div)
+                '() (division-rankings lower-div current-season))))
           (append
             (if (null? higher-rankings)
               (take div-rankings 3)
@@ -769,7 +789,9 @@
       (map
         (lambda (match)
           (match-result match
-            (+ (* season n-seconds-per-year) (* day-index n-seconds-per-week))))
+            (+
+              (* season n-seconds-per-year)
+              (* day-index n-seconds-per-week))))
         day))
     schedule
     (range 0 (length schedule))))
@@ -829,15 +851,25 @@
       (define t0 (time))
       (d season)
       (d (division-rankings 5 season)
-        (+ (division-starters-attr 'att 5 season) (division-starters-attr 'def 5 season)))
+        (+
+          (division-starters-attr 'att 5 season)
+          (division-starters-attr 'def 5 season)))
       (d (division-rankings 6 season)
-        (+ (division-starters-attr 'att 6 season) (division-starters-attr 'def 6 season)))
+        (+
+          (division-starters-attr 'att 6 season)
+          (division-starters-attr 'def 6 season)))
       (d (division-rankings 7 season)
-        (+ (division-starters-attr 'att 7 season) (division-starters-attr 'def 7 season)))
+        (+
+          (division-starters-attr 'att 7 season)
+          (division-starters-attr 'def 7 season)))
       (d (division-rankings 8 season)
-        (+ (division-starters-attr 'att 8 season) (division-starters-attr 'def 8 season)))
+        (+
+          (division-starters-attr 'att 8 season)
+          (division-starters-attr 'def 8 season)))
       (d (division-rankings 9 season)
-        (+ (division-starters-attr 'att 9 season) (division-starters-attr 'def 9 season)))
+        (+
+          (division-starters-attr 'att 9 season)
+          (division-starters-attr 'def 9 season)))
       (define t1 (time))
       (d "time taken" (- t1 t0)))
     (range 0 100))
