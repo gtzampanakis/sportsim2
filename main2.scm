@@ -607,9 +607,9 @@
                    player-id age-in-adj-periods)
   (if (<= age-in-adj-periods 0)
     (player-initial-attrs player-id)
-    (matrix+
+    (vektor+
       (player-attrs-by-age-in-adj-periods player-id (- age-in-adj-periods 1))
-      (matrix*
+      (vektor+
         0.05
         (rand-mult-normal
           0
@@ -621,11 +621,11 @@
     player-id
     (truncate/ (player-age player-id date) adj-period)))
 
-(d (player-attrs 5 (* 0 adj-period)))
-(d (player-attrs 5 (* 1 adj-period)))
-(d (player-attrs 5 (* 2 adj-period)))
-(d (player-attrs 5 (* 3 adj-period)))
-(d (player-attrs 5 (* 4 adj-period)))
+(d (player-attrs-by-age-in-adj-periods 7489274982 0))
+(d (player-attrs-by-age-in-adj-periods 7489274982 1))
+(d (player-attrs-by-age-in-adj-periods 7489274982 2))
+(d (player-attrs-by-age-in-adj-periods 7489274982 3))
+(d (player-attrs-by-age-in-adj-periods 7489274982 4))
 (exit)
 
 (define-memoized (player-attr attr player-id date)
