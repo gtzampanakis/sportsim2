@@ -27,3 +27,51 @@
       r
       (loop (1- i) (cons (1- i) r)))))
 
+(define-public (same n l)
+  (if (= l 0)
+    '()
+    (cons n (same n (1- l)))))
+
+(define-public (range-cycle s n)
+; Improper list of integers >= s and < n.
+  (unless (integer? s)
+    (error 'non-integer-s))
+  (unless (integer? n)
+    (error 'non-integer-n))
+  (let ((ls (range s n)))
+    (if (null? ls)
+      ls
+      (let loop ((pair ls))
+        (if (null? (cdr pair))
+          (begin
+            (set-cdr! pair ls)
+            ls)
+          (loop (cdr pair)))))))
+
+(define-public (flatten ls)
+  (fold append '() ls))
+
+(define-public (minabs-index ls)
+  (let loop ((ls ls) (c (inf)) (i 0) (r 0))
+    (if (null? ls)
+      r
+      (let* (
+          (a (abs (car ls)))
+          (o (< a c)))
+        (loop
+          (cdr ls)
+          (if o a c)
+          (1+ i)
+          (if o i r))))))
+
+(define-public (proc-prepend-arg f)
+  (lambda args
+    (apply f (cdr args))))
+
+(define-public (index ls val)
+  (let loop ((ls ls) (r 0))
+    (if (null? ls)
+      #f
+      (if (equal? (car ls) val)
+        r
+        (loop (cdr ls) (1+ r))))))

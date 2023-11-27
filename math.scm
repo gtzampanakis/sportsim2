@@ -240,3 +240,92 @@
           (/ (matrix-index augm this-row-i this-row-i)))))
     (reverse (range 0 na)))
   (car (reverse (matrix-transpose augm))))
+
+(define-public (pairing-function . ls)
+  ; Cantor pairing function. Maps a tuple of nonpositive integers to a unique
+  ; nonpositive integer.
+  (define (p2 y x)
+    (let ((x+y (+ x y)))
+      (+ (* (/ 1 2) x+y (+ x+y 1)) y)))
+  ; TODO: reduce uses weird order on the first function call. Check if this
+  ; matters here.
+  (reduce p2 -1 ls))
+
+(define-public (inverse-pairing-function z n)
+  (define (ip2 z)
+    (let* (
+        (w (floor (* (/ 1 2) (- (sqrt (+ (* 8 z) 1)) 1))))
+        (t (* (/ 1 2) (+ (* w w) w)))
+        (y (- z t))
+        (x (- w y))
+        (r (list x y)))
+      r))
+  (let loop ((z z) (n n) (r '()))
+    (if (= n 2) (append (ip2 z) r)
+      (let ((h (ip2 z)))
+        (loop (car h) (1- n) (cons (cadr h) r))))))
+
+(define-public (is2i as ns)
+  ; (=
+  ;     (is21 '(1 2 3) '(10 20))
+  ;     621)
+  ; (=
+  ;   (is2i '(444 333 222) '(1000 1000))
+  ;   222333444)
+  (when (not (= (length as) (1+ (length ns))))
+    (error "is2i: wrong input lengths"))
+  (let loop ((as as) (ns ns) (s 0) (p 1))
+    (when (not (null? ns))
+      (when (>= (car as) (car ns))
+        (error "is2i: value exceeds dimension")))
+    (if (null? ns)
+      (+ s (* p (car as)))
+      (loop
+        (cdr as)
+        (cdr ns)
+        (+ s (* p (car as)))
+        (* p (car ns))))))
+
+(define-public (i2is i ns)
+  (let loop ((ns ns) (i i) (as '()))
+    (if (null? ns)
+      (reverse (cons i as))
+      (loop
+        (cdr ns)
+        (quotient i (car ns))
+        (cons (remainder i (car ns)) as)))))
+
+(define-public (rand-logistic loc sc rs)
+  (let ((r (random:uniform rs)))
+    (let ((z (log10 (/ r (- 1 r)))))
+      (+ loc (* sc z)))))
+
+(define-public (logistic-cdf loc sc x)
+  (let ((z (/ (- x loc) sc)))
+    (/ 1 (+ 1 (exp (- z))))))
+
+(define-public (rand-binomial p n rs)
+  (let loop ((k 0) (i 0))
+    (if (= i n)
+      k
+      (loop (if (< (random:uniform rs) p) (1+ k) k) (1+ i)))))
+
+(define-public (rand-poisson l rs)
+; Algorithm by Knuth
+  (define L (exp (- l)))
+  (let loop ((k 1) (p (random:uniform rs)))
+    (if (< p L)
+      (1- k)
+      (loop (1+ k) (* p (random:uniform rs))))))
+
+(define-public (rand-mult-normal mean sigma rs)
+  (define z (map (lambda (_) (random:normal rs)) (range 0 (matrix-dim sigma))))
+  (define vq (qr-algorithm sigma))
+  (define v (car vq))
+  (define q (cadr vq))
+  (define A (matrix-dot q (matrix-diagonal-with-given-diag (map sqrt v))))
+  (define result
+    (vektor+
+      mean
+      (car (matrix-transpose (matrix-dot A (matrix-transpose (list z)))))))
+  result)
