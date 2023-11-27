@@ -3,6 +3,9 @@
 (use-modules (srfi srfi-43))
 (use-modules (ice-9 format))
 
+(use-modules (util))
+(use-modules (math))
+
 (define n-seconds-per-hour 3600)
 (define n-seconds-per-day (* n-seconds-per-hour 24))
 (define n-seconds-per-week (* n-seconds-per-day 7))
@@ -38,16 +41,6 @@
   (cons (list 'att 'vel) 0.0)
   (cons (list 'def 'vel) 0.0)
 ))
-
-(define d
-  (lambda args
-    (for-each
-      (lambda (arg) (display arg)(display " "))
-      args)
-    (newline)))
-
-(define (time)
-  (let ((p (gettimeofday))) (+ (car p) (/ (cdr p) 1000000.))))
 
 ; TODO:
 ; * cache strategies to keep one cached entry per season so that we can more
@@ -96,13 +89,6 @@
       (define name
         (memoized-proc
           (lambda args expr expr* ...))))))
-
-(define (range s n)
-; List of integers >= s and < n.
-  (let loop ((i n) (r '()))
-    (if (<= i s)
-      r
-      (loop (1- i) (cons (1- i) r)))))
 
 (define (same n l)
   (if (= l 0)
@@ -168,250 +154,6 @@
 (define (proc-prepend-arg f)
   (lambda args
     (apply f (cdr args))))
-
-(define (sum ls)
-  (fold + 0 ls))
-
-(define (prod ls)
-  (fold * 1 ls))
-
-; START MATRIX STUFF
-(define (vektor-display v)
-  (d v)
-  (d))
-
-(define (vektor-zeros l)
-  (make-list l 0))
-
-(define (vektor-sum v)
-  (fold + 0 v))
-
-(define (vektor-prod v)
-  (fold * 1 v))
-
-(define (vektor-random l)
-	(map (lambda (_) (random:uniform)) (range 0 l)))
-
-(define (vektor-scalar-prod v a)
-  (map (lambda (c) (* a c)) v))
-
-(define (vektor-inner-prod . vs)
-  (sum (apply map * vs)))
-
-(define (vektor-length v)
-  (sqrt (vektor-inner-prod v v)))
-
-(define (vektor-normalize v)
-  (vektor-scalar-prod v (/ 1 (vektor-length v))))
-
-(define (vektor-set! v i n)
-  (list-set! v i n))
-
-(define (matrix-scalar-prod m a)
-  (map
-    (lambda (row)
-      (vektor-scalar-prod row a))
-    m))
-
-(define (matrix-display m)
-  (for-each d m)
-  (d))
-
-(define (matrix-dim m)
-  (values (length m) (length (car m))))
-
-(define (matrix-index m i j)
-  (list-ref (list-ref m i) j))
-
-(define (matrix-zeros r c)
-  (map
-    (lambda (_) (make-list c 0))
-    (range 0 r)))
-
-(define (matrix-random r c)
-	(map
-		(lambda (_) (vektor-random c))
-    (range 0 r)))
-
-(define (matrix-symmetric-random d)
-  (define m (matrix-zeros d d))
-  (for-each
-    (lambda (i)
-      (for-each
-        (lambda (j)
-          (if (<= i j)
-            (let ((v (random:uniform)))
-              (matrix-set! m i j v)
-              (matrix-set! m j i v))))
-        (range 0 d)))
-      (range 0 d))
-  m)
-
-(define (matrix-identity d)
-  (define m (matrix-zeros d d))
-  (for-each
-    (lambda (i)
-      (matrix-set! m i i 1))
-    (range 0 d))
-  m)
-
-(define (matrix-diag m)
-  (map
-    (lambda (row i)
-      (matrix-index m i i))
-    m
-    (range 0 (matrix-dim m))))
-
-(define (matrix-diagonal-with-given-diag diag)
-  (define ld (length diag))
-  (define m (matrix-zeros ld ld))
-  (for-each
-    (lambda (i val)
-      (matrix-set! m i i val))
-    (range 0 ld)
-    diag)
-  m)
-
-(define (matrix-set! m i j n)
-  (list-set! (list-ref m i) j n))
-
-(define (matrix-row m i)
-  (list-ref m i ))
-
-(define (matrix-row-set! m i row)
-  (list-set! m i row))
-
-(define (broadcast vs)
-  (define m
-    (apply max
-      (map
-        (lambda (v)
-          (if (number? v)
-            1
-            (length v)))
-        vs)))
-  (map
-    (lambda (v)
-      (if (number? v)
-        (make-list m v)
-        v))
-    vs))
-(define (vektor-wise proc . vs)
-  (apply map proc (broadcast vs)))
-(define (vektor+ . vs)
-  (apply vektor-wise + vs))
-(define (vektor- . vs)
-  (apply vektor-wise - vs))
-(define (vektor* . vs)
-  (apply vektor-wise * vs))
-
-(define (matrix-wise proc . vs)
-  (apply vektor-wise proc vs))
-(define (matrix+ . vs)
-  (apply matrix-wise vektor+ vs))
-(define (matrix- . vs)
-  (apply matrix-wise vektor- vs))
-(define (matrix* . vs)
-  (apply matrix-wise vektor* vs))
-
-(define (matrix-transpose m)
-  (apply map list m))
-
-(define (matrix-dot . ms)
-  (define (matrix-dot-for-2 m1 m2)
-    (define m2t (matrix-transpose m2))
-    (map
-      (lambda (row)
-        (map
-          (lambda (col)
-            (vektor-inner-prod row col))
-          m2t))
-      m1))
-  (reduce-right matrix-dot-for-2 '() ms))
-
-(define (vektor-proj v v-to)
-  (vektor-scalar-prod
-    v-to
-    (/ (vektor-inner-prod v v-to) (vektor-inner-prod v-to v-to))))
-
-(define (gram-schmidt m)
-; This is the "classical" gram-schmidt according to wikipedia, which has some
-; numerical instability. See Wikipedia for a simple way to make it numerically
-; stable if this need arises.
-  (let loop ((m m) (res '()))
-    (if (null? m)
-      (matrix-transpose (map vektor-normalize (reverse res)))
-      (let* (
-          (vi (car m))
-          (ui
-            (if (null? res) vi
-              (apply vektor- vi (map (lambda (u) (vektor-proj vi u)) res)))))
-        (loop (cdr m) (cons ui res))))))
-
-(define (matrix-subdiagonal-abs-sum m)
-  (define-values (r c) (matrix-dim m))
-  (define s 0)
-  (for-each
-    (lambda (j)
-      (for-each
-        (lambda (i)
-          (when (< j i)
-            (set! s (+ s (abs (matrix-index m i j))))))
-        (range 0 r)))
-    (range 0 c))
-  s)
-
-(define (matrix-map proc m)
-  (map (lambda (row) (map proc row)) m))
-
-(define (qr-decomposition m)
-  (define mt (matrix-transpose m))
-  (define q (gram-schmidt mt))
-  (define r (matrix-transpose (matrix-dot mt q)))
-  (values q r))
-
-(define (qr-algorithm m)
-; Note that this does not always converge, for example it does not converge for
-; ((-1 2 5) (2 8 8) (1 8 9)). Such non-convergence happens when two eigenvalues
-; are equal or close to equal. We can introduce shifts in order to overcome
-; this. But it appears that the algorithm does converge for most symmetric
-; matrices and this is the only ones we care about.
-  (let loop ((m m) (q-comp (matrix-identity (matrix-dim m))) (i 0))
-    (if (or (> i 50000) (< (matrix-subdiagonal-abs-sum m) 1e-20))
-      (list (matrix-diag m) q-comp)
-		  (let-values (
-		   	 ((q r) (qr-decomposition m)))
-        (let* ((new-m (matrix-dot r q)))
-          (loop new-m (matrix-dot q-comp q) (1+ i)))))))
-
-(define (solve-linear-system a b)
-  (define-values (ma na) (matrix-dim a))
-  (define-values (q r) (qr-decomposition a))
-  (define c (matrix-dot (matrix-transpose q) (matrix-transpose (list b))))
-  (define augm (map (lambda (rrow crow) (append rrow crow)) r c))
-  (for-each
-    (lambda (this-row-i)
-      ; First subtract all lower rows so that all elements right to the
-      ; diagonal become 0.
-      (for-each
-        (lambda (other-row-i)
-          (matrix-row-set! augm this-row-i
-            (vektor+
-              (vektor-scalar-prod
-                (matrix-row augm other-row-i)
-                (- (matrix-index augm this-row-i other-row-i)))
-              (matrix-row augm this-row-i))))
-        (range (1+ this-row-i) na))
-      ; Now divide the whole row by the diagonal so that the diagonal element
-      ; becomes 1.
-      (matrix-row-set! augm this-row-i
-        (vektor-scalar-prod
-          (matrix-row augm this-row-i)
-          (/ (matrix-index augm this-row-i this-row-i)))))
-    (reverse (range 0 na)))
-  (car (reverse (matrix-transpose augm))))
-
-; END MATRIX STUFF
 
 (define attrs-covariance
   (let* (
@@ -620,13 +362,6 @@
   (player-attrs-by-age-in-adj-periods
     player-id
     (truncate/ (player-age player-id date) adj-period)))
-
-(d (player-attrs-by-age-in-adj-periods 7489274982 0))
-(d (player-attrs-by-age-in-adj-periods 7489274982 1))
-(d (player-attrs-by-age-in-adj-periods 7489274982 2))
-(d (player-attrs-by-age-in-adj-periods 7489274982 3))
-(d (player-attrs-by-age-in-adj-periods 7489274982 4))
-(exit)
 
 (define-memoized (player-attr attr player-id date)
   (define attrs (player-attrs player-id date))
