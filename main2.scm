@@ -1,7 +1,18 @@
-(use-modules (sportsim2))
-
 (use-modules (util))
 (use-modules (math))
+(use-modules (sportsim2))
+
+(for-each
+  (lambda (season)
+    (define teams (division-rankings 0 season))
+    (d teams)
+    (d (map (lambda (t) (team-division t season)) teams))
+    (d (map (lambda (t) (team-ranking t season)) teams))
+    (d (map (lambda (t) (team-rank-across-divisions t season)) teams))
+    (d (map (lambda (t) (team-support-factor-based-on-last-season t season)) teams))
+    (d))
+  (range 0 20))
+(exit)
 
 (define (main)
   (for-each
@@ -30,7 +41,7 @@
           (division-starters-attr 'def 9 season)))
       (define t1 (time))
       (d "time taken" (- t1 t0)))
-    (range 0 10))
+    (range 0 2))
 )
 
 ;(use-modules (statprof))

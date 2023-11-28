@@ -20,9 +20,10 @@
 
 (define-public conf-date-start 0)
 (define-public conf-n-divisions-per-country 5)
-(define-public conf-n-teams-per-division 8)
+(define-public conf-n-teams-per-division 6)
 (define-public conf-n-players-per-team 4)
 (define-public conf-n-players-in-match 2)
+(define-public conf-n-teams-promoted 3)
 
 (define-public home-advantage-factor 1.1)
 
@@ -45,6 +46,8 @@
 ))
 
 ; TODO:
+; * memoization should be smart when it sees a "date" argument and only keep
+; certain dates
 ; * cache strategies to keep one cached entry per season so that we can more
 ; easily go back as far as we want
 ; * stadiums
@@ -56,7 +59,7 @@
 ; * player nationalities to affect their initial and further attributes
 ; * dependence on country
 
-(define-public (memoized-proc proc)
+(define-public (memoized-proc proc . args)
   (define max-cache-size 50000)
   (define key-to-cache-sublist (make-hash-table))
   (define cache '())
@@ -343,12 +346,30 @@
                 '() (division-rankings lower-div current-season))))
           (append
             (if (null? higher-rankings)
-              (take div-rankings 3)
-              (take-right higher-rankings 3))
+              (take div-rankings conf-n-teams-promoted)
+              (take-right higher-rankings conf-n-teams-promoted))
             (if (null? lower-rankings)
-              (take-right div-rankings 3)
-              (take lower-rankings 3))
-            (drop (drop-right div-rankings 3) 3)))))))
+              (take-right div-rankings conf-n-teams-promoted)
+              (take lower-rankings conf-n-teams-promoted))
+            (drop
+              (drop-right div-rankings conf-n-teams-promoted)
+              conf-n-teams-promoted)))))))
+
+(define-public-memoized (team-division team season)
+  (if (= season 0)
+    (truncate/ team conf-n-teams-per-division)
+    (let* (
+        (div-prev (team-division team (1- season)))
+        (div-prev-rankings (division-rankings div-prev (1- season)))
+        (team-ranking (index div-prev-rankings team)))
+      (cond
+        ((< team-ranking conf-n-teams-promoted) 
+         (let ((higher-div (higher-division div-prev)))
+           (if (null? higher-div) div-prev higher-div)))
+        ((>= team-ranking (- conf-n-teams-per-division conf-n-teams-promoted))
+         (let ((lower-div (lower-division div-prev)))
+           (if (null? lower-div) div-prev lower-div)))
+        (else div-prev)))))
 
 (define-public-memoized (player-perf-on-date attr player date)
   (define loc (player-attr attr player date))
@@ -452,3 +473,57 @@
       (lambda (team)
         (team-starters-attr attr team (* season n-seconds-per-year)))
       (division-teams division season))))
+
+(define-public-memoized (team-ranking team season)
+ (define div (team-division team season))
+ (define rankings (division-rankings div season))
+ (index rankings team))
+
+(define-public (team-rank-across-divisions team season)
+  (define div (team-division team season))
+  (define div-rank (division-rank div))
+  (define team-rank (team-ranking team season))
+  (+ (* div-rank conf-n-teams-per-division) team-rank))
+
+(define-public-memoized (stadium-capacity stadium date)
+  5000)
+
+(define-public-memoized (team-stadium team date)
+  team)
+
+(define-public-memoized (team-ticket-price date)
+  20.0)
+
+(define-public-memoized (team-initial-supporters team)
+  (floor
+    (*
+      (random:uniform (get-random-state 'team-initial-supporters team))
+      1000000)))
+
+(define-public (country-total-supporters country)
+  1000000)
+
+(define-public (country-total-teams country)
+  (* conf-n-divisions-per-country conf-n-teams-per-division))
+
+(define-public (team-support-factor-based-on-last-season team season)
+  (define (weight total-rank) (expt (1+ total-rank) -0.5))
+  (define n (country-total-supporters country))
+  (define country (division-country (team-division team season)))
+  (if (= season 0)
+    (truncate/ (/ n (country-total-teams country)) 1)
+    (let (
+      (team-total-rank (team-rank-across-divisions team (1- season)))
+      (total-weight
+        (sum
+          (map weight
+           (range 1
+              (1+
+               (* conf-n-divisions-per-country conf-n-teams-per-division)))))))
+  (truncate/ (* (/ (weight team-total-rank) total-weight) n) 1))))
+
+(define-public (match-attendance teams date)
+  ; factors:
+  ; team base of supporters
+  ; ticket price
+  1)
