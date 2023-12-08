@@ -329,3 +329,7 @@
       mean
       (car (matrix-transpose (matrix-dot A (matrix-transpose (list z)))))))
   result)
+
+(define-public (uuid)
+  (string-pad
+    (number->string (random (expt 2 128)) 16) 32 #\0))
