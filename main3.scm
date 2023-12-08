@@ -46,7 +46,7 @@
         (sqlite3-execute-select
           db
           (rtd-to-table-name <keyval>)
-          '(id key value)
+          (record-type-fields <keyval>)
           make-keyval
           (list (cons 'key key))
           1))
@@ -77,7 +77,7 @@
   (for-each
     (lambda (_)
       (let ((record (make-country #f (string-append "country-" (uuid)))))
-        (sqlite3-save-record db record)))
+        (sqlite3-save-record db rtd-to-table-name record)))
     (range 0 conf-n-countries)))
 
 (define (create-tables db)
