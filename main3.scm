@@ -42,15 +42,15 @@
     ((db key)
      (load-keyval-value db key #f))
     ((db key default)
-      (define records
-        (sqlite3-execute-select
-          db
-          (rtd-to-table-name <keyval>)
-          (record-type-fields <keyval>)
-          make-keyval
-          (list (cons 'key key))
-          1))
-      (if (null? records) default (keyval-value (car records))))))
+      (define row #f)
+      (sqlite3-for-each-by-select
+        (lambda (r) (set! row r))
+        db
+        (rtd-to-table-name <keyval>)
+        (record-type-fields <keyval>)
+        (list (cons 'key key))
+        1)
+      (if (equal? #f row) default (keyval-value (apply make-keyval row))))))
 
 (define (sql-create-table-col-list rtd)
   (string-append
@@ -74,11 +74,23 @@
     rtd))
 
 (define (gen-countries db)
+  (d "Generating countries...")
   (for-each
     (lambda (_)
       (let ((record (make-country #f (string-append "country-" (uuid)))))
         (sqlite3-save-record db rtd-to-table-name record)))
-    (range 0 conf-n-countries)))
+    (range 0 conf-n-countries))
+  (d "Done generating countries"))
+
+(define (gen-teams db)
+  (d "Generating teams...")
+  (sqlite3-for-each-by-sql
+    (lambda (row)
+      (d 'foo row))
+    db
+    "select * from sim_country"
+    '())
+  (d "Done generating teams"))
 
 (define (create-tables db)
   (for-each
@@ -100,6 +112,7 @@
 (define (generate-entities db)
   (when (not (equal? (load-keyval-value db "generate-entities-done") 1))
     (gen-countries db)
+    (gen-teams db)
     (sqlite3-save-record db rtd-to-table-name
      (make-keyval #f "generate-entities-done" 1))))
 
