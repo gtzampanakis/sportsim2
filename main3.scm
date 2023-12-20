@@ -1,4 +1,5 @@
 (use-modules (srfi srfi-9))
+(use-modules (srfi srfi-19))
 (use-modules (ice-9 string-fun))
 (use-modules (date))
 (use-modules (util))
@@ -9,8 +10,7 @@
 (define db-schema-version 1)
 
 (define conf-n-countries 3)
-(define conf-n-teams-per-country 18)
-(define conf-n-teams-per-division 6)
+(define conf-n-teams-per-country 6)
 (define conf-n-players-per-team 4)
 (define conf-n-players-in-match 2)
 (define conf-n-teams-promoted 3)
@@ -31,22 +31,66 @@
   (name country-name))
 
 (define-record-type <team>
-  (make-team id name)
+  (make-team id name country_id)
   team?
   (id team-id)
   (name team-name)
   (country_id team-country_id))
 
 (define-record-type <competition>
-  (make-competition id name country_id season)
+  (make-competition id name country_id start_month start_day start_dow)
   competition?
   (id competition-id)
   (name competition-name)
   (country_id competition-country_id)
-  (season competition-season))
+  (start_month competition-start_month)
+  (start_day competition-start_day)
+  (start_dow competition-start_dow))
+
+(define-record-type <competition_season>
+  (make-competition_season id competition_id season)
+  competition_season?
+  (id competition_season-id)
+  (competition_id competition_season-competition_id)
+  (season competition_season-season))
+
+(define-record-type <competition_season_team>
+  (make-competition_season_team id competition_season_id team_id)
+  competition_season_team?
+  (id competition_season_team-id)
+  (competition_season_id competition_season_team-competition_season_id)
+  (team_id competition_season_team-team_id))
+
+(define-record-type <match>
+  (make-match
+    id
+    competition_season_id
+    matchday
+    home_team_id
+    away_team_id
+    home_score
+    away_score
+    finished)
+  match?
+  (id match-id)
+  (competition_season_id match-competition_season_id)
+  (matchday match-matchday)
+  (home_team_id match-home_team_id)
+  (away_team_id match-away_team_id)
+  (home_score match-home_score)
+  (away_score match-away_score)
+  (finished match-finished))
 
 (define all-types
-  (list <keyval> <country> <team> <competition>))
+  (list
+    <keyval>
+    <country>
+    <team>
+    <competition>
+    <competition_season>
+    <competition_season_team>
+    <match>
+))
 
 (define (rtd-to-table-name rtd)
   (assoc-ref
@@ -54,7 +98,11 @@
       (cons <keyval> 'sim_keyval)
       (cons <country> 'sim_country)
       (cons <team> 'sim_team)
-      (cons <competition> 'sim_competition))
+      (cons <competition> 'sim_competition)
+      (cons <competition_season> 'sim_competition_season)
+      (cons <competition_season_team> 'sim_competition_season_team)
+      (cons <match> 'sim_match)
+    )
     rtd))
 
 (define load-keyval-value
@@ -86,32 +134,41 @@
       ", ")
     ")"))
 
-(define (gen-countries db)
+(define (generate-countries db)
   (d "Generating countries...")
-  (for-each
-    (lambda (_)
-      (let ((record (make-country #f (string-append "country-" (uuid)))))
-        (sqlite3-save-record db rtd-to-table-name record)))
-    (range 0 conf-n-countries))
+  (sqlite3-execute-sql db
+    "with recursive cnt(x)
+      as (select 1 union all select x+1 from cnt where x<?)
+    insert into sim_country
+    (name)
+    select cnt.x
+    from cnt"
+    (list conf-n-countries))
   (d "Done generating countries"))
 
-(define (generate-teams-for-country db country)
-  (for-each
-    (lambda (_)
-      (define record
-        (make-team #f (string-append "team-" (uuid))))
-      (sqlite3-save-record db rtd-to-table-name record))
-    (range 0 conf-n-teams-per-country)))
-
-(define (gen-teams db)
+(define (generate-teams db)
   (d "Generating teams...")
-  (sqlite3-for-each-by-select
-    (lambda (country) (generate-teams-for-country db country))
-    make-country
-    db
-    (rtd-to-table-name <country>)
-    (record-type-fields <country>))
+  (sqlite3-execute-sql db
+      "with recursive cnt(x)
+        as (select 1 union all select x+1 from cnt where x<?)
+      insert into sim_team
+      (name, country_id)
+      select cnt.x, c.id
+      from cnt
+      cross join sim_country c"
+      (list conf-n-teams-per-country))
   (d "Done generating teams"))
+
+(define (generate-competitions db)
+  (d "Generating competitions...")
+  (sqlite3-execute-sql db
+    "insert into sim_competition
+    (name, country_id, start_month, start_day, start_dow)
+    select
+    'league', c.id, 8, 1, 0
+    from sim_country c"
+    )
+  (d "Done generating competitions"))
 
 (define (create-tables db)
   (for-each
@@ -132,13 +189,71 @@
 
 (define (generate-entities db)
   (when (not (equal? (load-keyval-value db "generate-entities-done") 1))
-    (gen-countries db)
-    (gen-teams db)
+    (generate-countries db)
+    (generate-teams db)
+    (generate-competitions db)
     (sqlite3-save-record db rtd-to-table-name
      (make-keyval #f "generate-entities-done" 1))))
 
-(define (do-day date)
-  (d (iso-8601-date date)))
+(define (schedule-competition db competition date)
+  (d "Scheduling..." db competition date))
+
+(define (schedule-seasons db date)
+  ; Find competitions that start in 3 months' time.
+  (define cs-ids
+    (map car
+      (sqlite3-execute-sql db
+        "
+        insert into sim_competition_season
+        (competition_id, season)
+        select comp.id, cast(strftime('%Y', date(?, '+3 months')) as integer) + 1
+        from
+        sim_competition comp
+        where 1=1
+        and start_month = cast(strftime('%m', date(?, '+3 months')) as integer)
+        and start_day = cast(strftime('%d', date(?, '+3 months')) as integer)
+        returning id
+        "
+        (list date date date))))
+  (for-each
+    (lambda (cs-id)
+      (define cst-ids
+        (map car
+          (sqlite3-execute-sql db
+            "
+            insert into sim_competition_season_team
+            (competition_season_id, team_id)
+            select
+            cs.id, t.id
+            from sim_competition_season cs
+            join sim_competition comp on comp.id = cs.competition_id
+            join sim_team t on t.country_id = comp.country_id
+            where cs.id = ?
+            returning id
+            "
+            (list cs-id))))
+      (d "foobar" cst-ids)
+      5)
+    cs-ids)
+  ;(for-each
+  ;  (lambda (cs-id)
+  ;    (sqlite3-execute-sql db
+  ;      "
+  ;      insert into sim_match
+  ;      (competition_season_id, matchday, home_team_id, away_team_id)
+  ;      select
+  ;      from
+  ;      sim_competition_season cs
+  ;      where cs.id = ?
+  ;      "
+  ;      (list cs-id)))
+  ;  cs-ids)
+  )
+
+(define (do-day db date)
+  (d (iso-8601-datetime (current-date)) "Doing day" (iso-8601-date date))
+  (schedule-seasons db date)
+  (d (iso-8601-datetime (current-date)) "Done day" (iso-8601-date date)))
 
 (define (main)
   (define db (sqlite3-open "db.db"))
@@ -147,7 +262,7 @@
 
   (let loop ((date conf-sim-start-date))
     (when (date<? date conf-sim-end-date)
-      (do-day date)
+      (do-day db date)
       (loop (add-day date))))
 
   (sqlite3-close db)

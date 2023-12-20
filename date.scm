@@ -12,6 +12,7 @@
   ts->date
   date->ts
   iso-8601-date
+  iso-8601-datetime
   add-day
   add-days
   add-months
@@ -32,6 +33,18 @@
     (lpad (number->string (date-month date)) 2 "0")
     "-"
     (lpad (number->string (date-day date)) 2 "0")))
+
+(define (iso-8601-datetime date)
+  (string-append
+    (iso-8601-date date)
+    " "
+    (lpad (number->string (date-hour date)) 2 "0")
+    ":"
+    (lpad (number->string (date-minute date)) 2 "0")
+    ":"
+    (lpad (number->string (date-second date)) 2 "0")
+    "."
+    (lpad (number->string (truncate/ (date-nanosecond date) 1000000)) 3 "0")))
 
 (define (div-irregular a bs)
   ; Returns (r1 . r2)
