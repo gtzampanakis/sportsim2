@@ -217,38 +217,27 @@
         (list date date date))))
   (for-each
     (lambda (cs-id)
-      (define cst-ids
-        (map car
-          (sqlite3-execute-sql db
-            "
-            insert into sim_competition_season_team
-            (competition_season_id, team_id)
-            select
-            cs.id, t.id
-            from sim_competition_season cs
-            join sim_competition comp on comp.id = cs.competition_id
-            join sim_team t on t.country_id = comp.country_id
-            where cs.id = ?
-            returning id
-            "
-            (list cs-id))))
-      (d "foobar" cst-ids)
-      5)
-    cs-ids)
-  ;(for-each
-  ;  (lambda (cs-id)
-  ;    (sqlite3-execute-sql db
-  ;      "
-  ;      insert into sim_match
-  ;      (competition_season_id, matchday, home_team_id, away_team_id)
-  ;      select
-  ;      from
-  ;      sim_competition_season cs
-  ;      where cs.id = ?
-  ;      "
-  ;      (list cs-id)))
-  ;  cs-ids)
-  )
+      (sqlite3-execute-sql db
+        "
+        select *
+        from
+        sim_competition_season cs
+        /* If previous season exists use this branch. */
+        left join sim_competition_season cs_prev
+          on cs.competition_id = cs_prev.competition_id
+          and cs_prev.season = cs.season - 1
+        left join sim_competition_season_team cst_prev
+          on cst_prev.competition_season_id = cs_prev.id
+        left join sim_team t 
+        /* Otherwise use this branch. */
+        left join sim_competition comp on comp.id = cs.competition_id
+        left join sim_team t on t.country_id = comp.country_id
+        where cs.id = ?
+        order by t.id
+        limit ?
+        "
+        (list cs-id conf-n-teams-per-country)))
+    cs-ids))
 
 (define (do-day db date)
   (d (iso-8601-datetime (current-date)) "Doing day" (iso-8601-date date))
