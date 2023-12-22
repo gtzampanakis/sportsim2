@@ -1,6 +1,6 @@
 create table keyval(
   id integer primary key,
-  key text,
+  key text unique,
   value 
 );
 
