@@ -13,8 +13,8 @@
 (define conf-n-countries 3)
 (define conf-n-teams-per-country 40)
 (define conf-n-teams-per-division 8)
-(define conf-sim-start-date (date 2023 7 1))
-(define conf-sim-end-date (date 2024 7 1))
+(define conf-sim-start-date (date 2023 5 1))
+(define conf-sim-end-date (date 2025 5 1))
 
 (define db-path "db.db")
 (define db (sqlite3-open db-path))
@@ -94,70 +94,102 @@
     (name, country_id, start_month, start_day, start_dow)
     select
     'league', id, 8, 1, 0
-    from country")
-  ; comp_inst
-  (sqlite3-execute-sql db
-    "insert into comp_inst
-    (comp_id, season)
-    select
-    id, ?
-    from comp"
-    (list (date-year conf-sim-start-date)))
-  ; comp_inst_team
-  (sqlite3-execute-sql db
-    "insert into comp_inst_team
-    (comp_inst_id, team_id)
-    select
-    a.comp_inst_id, a.team_id
-    from (
-      select
-      comp_inst.id comp_inst_id, team.id team_id,
-      row_number() over(partition by team.country_id order by team.name) rn
-      from comp_inst
-      join comp on comp.id = comp_inst.comp_id
-      join team on team.country_id = comp.country_id
-    ) a
-    where a.rn <= ?"
-    (list conf-n-teams-per-division))
-)
+    from country"))
+
+(define (schedule-matches ci-id team-ids)
+  (for-each
+    (lambda (matchday-schedule matchday-index)
+      (for-each
+        (lambda (teams)
+          (sqlite3-execute-sql db
+            "insert into match
+            (comp_inst_id, matchday, home_team_id, away_team_id, finished)
+            values
+            (?, ?, ?, ?, #f)"
+            (list
+              ci-id
+              matchday-index
+              (list-ref team-ids (car teams))
+              (list-ref team-ids (cadr teams)))))
+        matchday-schedule))
+    (gen-round-robin (length team-ids))
+    (range 0 (length (gen-round-robin (length team-ids))))))
+
+(define (schedule-comp comp day)
+  (when (not (sqlite3-execute-sql-exists db
+                 "select 1 from comp_inst ci
+                 where ci.comp_id = ?
+                 and ci.season = ?"
+                 (list comp (date-year day))))
+    (d "Scheduling comp for season:" (date-year day))
+    (let (
+      (ci
+        (sqlite3-execute-sql-first-flat db
+          "insert into comp_inst
+          (comp_id, season)
+          values
+          (?, ?)
+          returning id"
+          (list comp (date-year day))))
+      (ci-prev (sqlite3-execute-sql-first-flat db
+        "select ci.id
+        from comp_inst ci
+        where ci.comp_id = ?
+        and ci.season = ?"
+        (list comp (1- (date-year day))))))
+      (define team-ids
+        (if ci-prev
+          (sqlite3-execute-sql-flat db
+            "insert into comp_inst_team
+            (comp_inst_id, team_id)
+            select ?, cit.team_id
+            from comp_inst_team cit
+            where cit.comp_inst_id = ?
+            returning team_id"
+            (list ci ci-prev))
+          (sqlite3-execute-sql-flat db
+            "insert into comp_inst_team
+            (comp_inst_id, team_id)
+            select
+            a.comp_inst_id, a.team_id
+            from (
+              select
+              comp_inst.id comp_inst_id, team.id team_id,
+              row_number()
+                over(partition by team.country_id order by team.name) rn
+              from comp_inst
+              join comp on comp.id = comp_inst.comp_id
+              join team on team.country_id = comp.country_id
+              where comp_inst.id = ?
+            ) a
+            where a.rn <= ?
+            returning team_id"
+            (list ci conf-n-teams-per-division))))
+      (schedule-matches ci team-ids))))
+
 
 (define (do-day day)
   (d "Doing day:" (iso-8601-date day))
-  (sqlite3-execute-sql db
-    "insert into comp_inst
-    (comp_id, season)
-    select
-    ci_prev.comp_id, ci_prev.season + 1
-    from comp_inst ci_prev
-    join comp on comp.id = ci_prev.comp_id
-    where ci_prev.season = (? - 1)
-    and comp.start_month = mod(? - 1 + 3, 12) + 1
-    and comp.start_day = ?
-    and not exists(
-     /* Don't redo the first season that was created during initialization. */
-      select 1
-      from comp_inst
-      where comp_inst.id = ci_prev.comp_id
-      and comp_inst.season = ci_prev.season + 1
-    )
-    "
-    (list (date-year day) (date-month day) (date-day day)))
-  (sqlite3-execute-sql db
-    "insert into comp_inst_team
-      (comp_inst_id, team_id)
-      select
-      comp_inst.id, comp_inst_team.team_id
-      from comp_inst
-      join comp on comp.id = comp_inst.comp_id
-      join comp_inst comp_inst_prev
-            on comp_inst_prev.comp_id = comp_inst.comp_id
-            and comp_inst_prev.season = comp_inst.season - 1
-      join comp_inst_team on comp_inst_team.comp_inst_id = comp_inst_prev.id
-      where comp_inst.season = ?
-      and comp.start_month = mod(? - 1 + 3, 12) + 1
-      and comp.start_day = ?"
-     (list (date-year day) (date-month day) (date-day day)))
-)
+  (define date-3-months-after (add-months day 3)) 
+  (when date-3-months-after
+    (for-each
+      (lambda (comp) (schedule-comp comp day))
+      (map car
+        (sqlite3-execute-sql db
+          "select comp.id
+          from comp
+          where comp.start_month = ?
+          and comp.start_day = ?
+          and not exists(
+             select 1
+             from comp_inst ci
+             where ci.comp_id = comp.id
+             and ci.season = ?
+          )"
+          (list
+            (date-month date-3-months-after)
+            (date-day date-3-months-after)
+            (date-year day)))))))
 
 (define (main)
   (migrate)
