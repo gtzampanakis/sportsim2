@@ -40,6 +40,7 @@ create table match(
   id integer primary key,
   comp_inst_id integer,
   matchday integer,
+  matchdate text,
   home_team_id integer,
   away_team_id integer,
   home_score integer,

@@ -96,19 +96,26 @@
     'league', id, 8, 1, 0
     from country"))
 
-(define (schedule-matches ci-id team-ids)
+(define (schedule-matches ci-id team-ids no-earlier-than)
+  (define start-date
+    (let loop ((d no-earlier-than))
+      (if (= (date-week-day d) 0)
+        d
+        (loop (add-day d)))))
   (for-each
     (lambda (matchday-schedule matchday-index)
       (for-each
         (lambda (teams)
           (sqlite3-execute-sql db
             "insert into match
-            (comp_inst_id, matchday, home_team_id, away_team_id, finished)
+            (comp_inst_id, matchday, matchdate,
+             home_team_id, away_team_id, finished)
             values
-            (?, ?, ?, ?, #f)"
+            (?, ?, ?, ?, ?, #f)"
             (list
               ci-id
               matchday-index
+              (iso-8601-date (add-days start-date (* 7 matchday-index)))
               (list-ref team-ids (car teams))
               (list-ref team-ids (cadr teams)))))
         matchday-schedule))
@@ -165,32 +172,38 @@
             where a.rn <= ?
             returning team_id"
             (list ci conf-n-teams-per-division))))
-      (schedule-matches ci team-ids))))
-
+      (let* (
+        (month-day (sqlite3-execute-sql-first db
+                           "select start_month, start_day
+                           from comp
+                           where id = (
+                             select comp_id from comp_inst where id = ?)"
+                           (list ci)))
+        (no-earlier-than
+          (date (date-year day) (car month-day) (cadr month-day))))
+        (schedule-matches ci team-ids no-earlier-than)))))
 
 (define (do-day day)
   (d "Doing day:" (iso-8601-date day))
-  (define date-3-months-after (add-months day 3)) 
-  (when date-3-months-after
-    (for-each
-      (lambda (comp) (schedule-comp comp day))
-      (sqlite3-execute-sql-flat db
-        "select comp.id
-        from comp
-        where date(
-           ? || '-01-01',
-            (comp.start_month - 1) || ' months',
-            (comp.start_day - 1) || ' days'
-        ) <= ?
-        and not exists(
-           select 1
-           from comp_inst ci
-           where ci.comp_id = comp.id
-           and ci.season = ?
-        )"
-        (list
-          (date-year day)
-          (iso-8601-date date-3-months-after))))))
+  (for-each
+    (lambda (comp) (schedule-comp comp day))
+    (sqlite3-execute-sql-flat db
+      "select comp.id
+      from comp
+      where date(
+         ? || '-01-01',
+          (comp.start_month - 1) || ' months',
+          (comp.start_day - 1) || ' days'
+      ) <= date(?, '3 months')
+      and not exists(
+         select 1
+         from comp_inst ci
+         where ci.comp_id = comp.id
+         and ci.season = ?
+      )"
+      (list
+        (date-year day)
+        (iso-8601-date day)))))
 
 (define (main)
   (migrate)
