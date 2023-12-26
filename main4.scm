@@ -174,22 +174,23 @@
   (when date-3-months-after
     (for-each
       (lambda (comp) (schedule-comp comp day))
-      (map car
-        (sqlite3-execute-sql db
-          "select comp.id
-          from comp
-          where comp.start_month = ?
-          and comp.start_day = ?
-          and not exists(
-             select 1
-             from comp_inst ci
-             where ci.comp_id = comp.id
-             and ci.season = ?
-          )"
-          (list
-            (date-month date-3-months-after)
-            (date-day date-3-months-after)
-            (date-year day)))))))
+      (sqlite3-execute-sql-flat db
+        "select comp.id
+        from comp
+        where date(
+           ? || '-01-01',
+            (comp.start_month - 1) || ' months',
+            (comp.start_day - 1) || ' days'
+        ) <= ?
+        and not exists(
+           select 1
+           from comp_inst ci
+           where ci.comp_id = comp.id
+           and ci.season = ?
+        )"
+        (list
+          (date-year day)
+          (iso-8601-date date-3-months-after))))))
 
 (define (main)
   (migrate)
