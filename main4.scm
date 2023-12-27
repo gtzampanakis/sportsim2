@@ -109,11 +109,19 @@
         conf-n-players-per-country
         conf-n-countries)
       conf-sim-start-date))
+  ; playerattr
   (sqlite3-execute-sql db
     "insert into playerattr
     (player_id, on_date, rat_att, rat_def, rat_vel)
     select id, ?, 1500., 1500., 1500.
     from player"
+    (list conf-sim-start-date))
+  ; teamfinance
+  (sqlite3-execute-sql db
+    "insert into teamfinances
+    (team_id, on_date, balance)
+    select id, ?, 1000 * 1000
+    from team"
     (list conf-sim-start-date)))
 
 (define (schedule-matches ci-id team-ids no-earlier-than)

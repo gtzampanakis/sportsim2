@@ -15,6 +15,13 @@ create table team(
   country_id integer
 );
 
+create table teamfinances(
+  id integer primary key,
+  team_id integer,
+  on_date text,
+  balance real
+);
+
 create table comp(
   id integer primary key,
   name text,
@@ -62,3 +69,25 @@ create table playerattr(
   rat_def real,
   rat_vel real
 );
+
+create table playercontract(
+  id integer primary key,
+  player_id integer,
+  team_id integer,
+  start_date text,
+  end_date text
+);
+
+create table manager(
+  id integer primary key,
+  name text
+);
+
+create table managercontract(
+  id integer primary key,
+  manager_id integer,
+  team_id integer,
+  start_date text,
+  end_date text
+);
+
