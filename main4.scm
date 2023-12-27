@@ -15,6 +15,7 @@
 (define conf-n-teams-per-division 8)
 (define conf-sim-start-date (date 2023 5 1))
 (define conf-sim-end-date (date 2025 5 1))
+(define conf-n-players-per-country 2000)
 
 (define db-path "db.db")
 (define db (sqlite3-open db-path))
@@ -94,7 +95,26 @@
     (name, country_id, start_month, start_day, start_dow)
     select
     'league', id, 8, 1, 0
-    from country"))
+    from country")
+  ; player
+  (sqlite3-execute-sql db
+    "with recursive cnt(x)
+      as (select 1 union all select x+1 from cnt where x<?)
+    insert into player
+    (name, dob)
+    select cnt.x, date(?, '-25 years')
+    from cnt"
+    (list
+      (*
+        conf-n-players-per-country
+        conf-n-countries)
+      conf-sim-start-date))
+  (sqlite3-execute-sql db
+    "insert into playerattr
+    (player_id, on_date, rat_att, rat_def, rat_vel)
+    select id, ?, 1500., 1500., 1500.
+    from player"
+    (list conf-sim-start-date)))
 
 (define (schedule-matches ci-id team-ids no-earlier-than)
   (define start-date

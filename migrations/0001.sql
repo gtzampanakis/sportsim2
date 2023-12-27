@@ -47,3 +47,18 @@ create table match(
   away_score integer,
   finished integer
 );
+
+create table player(
+  id integer primary key,
+  name text,
+  dob text
+);
+
+create table playerattr(
+  id integer primary key,
+  player_id integer,
+  on_date text,
+  rat_att real,
+  rat_def real,
+  rat_vel real
+);
