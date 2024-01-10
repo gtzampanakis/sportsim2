@@ -16,6 +16,9 @@
 (define conf-sim-start-date (date 2023 5 1))
 (define conf-sim-end-date (date 2025 5 1))
 (define conf-n-players-per-country 2000)
+(define conf-n-managers-per-country 200)
+(define conf-n-players-per-team 25)
+(define conf-n-managers-per-team 1)
 
 (define db-path "db.db")
 (define db (sqlite3-open db-path))
@@ -80,15 +83,17 @@
     from cnt"
     (list conf-n-countries))
   ; team
-  (sqlite3-execute-sql db
-      "with recursive cnt(x)
-        as (select 1 union all select x+1 from cnt where x<?)
-      insert into team
-      (name, country_id)
-      select cnt.x, c.id
-      from cnt
-      cross join country c"
-      (list conf-n-teams-per-country))
+  (define teams
+    (sqlite3-execute-sql-flat db
+        "with recursive cnt(x)
+          as (select 1 union all select x+1 from cnt where x<?)
+        insert into team
+        (name, country_id)
+        select cnt.x, c.id
+        from cnt
+        cross join country c
+        returning id"
+        (list conf-n-teams-per-country)))
   ; comp
   (sqlite3-execute-sql db
     "insert into comp
@@ -109,6 +114,63 @@
         conf-n-players-per-country
         conf-n-countries)
       conf-sim-start-date))
+  ; manager
+  (sqlite3-execute-sql db
+    "with recursive cnt(x)
+      as (select 1 union all select x+1 from cnt where x<?)
+    insert into manager
+    (name, dob)
+    select cnt.x, date(?, '-45 years')
+    from cnt"
+    (list
+      (*
+        conf-n-managers-per-country
+        conf-n-countries)
+      conf-sim-start-date))
+  ; playercontract
+  (for-each
+    (lambda (t)
+      (sqlite3-execute-sql db
+        "insert into playercontract
+        (player_id, team_id, start_date, end_date)
+        select
+        p.id, ?, ?, date(?, '5 years')
+        from player p
+        where not exists(
+          select 1
+          from playercontract pc
+          where pc.player_id = p.id
+        )
+        order by p.id
+        limit ?"
+        (list
+          t
+          conf-sim-start-date
+          conf-sim-start-date
+          conf-n-players-per-team)))
+    teams)
+  ; playercontract
+  (for-each
+    (lambda (t)
+      (sqlite3-execute-sql db
+        "insert into managercontract
+        (manager_id, team_id, start_date, end_date)
+        select
+        m.id, ?, ?, date(?, '5 years')
+        from manager m
+        where not exists(
+          select 1
+          from managercontract mc
+          where mc.manager_id = m.id
+        )
+        order by m.id
+        limit ?"
+        (list
+          t
+          conf-sim-start-date
+          conf-sim-start-date
+          conf-n-managers-per-team)))
+    teams)
   ; playerattr
   (sqlite3-execute-sql db
     "insert into playerattr
@@ -213,6 +275,8 @@
 
 (define (do-day day)
   (d "Doing day:" (iso-8601-date day))
+  ; Schedule competitions that are starting within three months of today and
+  ; haven't already been scheduled.
   (for-each
     (lambda (comp) (schedule-comp comp day))
     (sqlite3-execute-sql-flat db
