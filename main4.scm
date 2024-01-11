@@ -302,7 +302,7 @@
 
 (define (find-and-play-matches db day)
   (define matches
-    (sqlite3-execute-sql db
+    (sqlite3-execute-sql-get-row-procs db
      "select *
      from match m
      where m.matchdate >= ?
