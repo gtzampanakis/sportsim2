@@ -296,6 +296,10 @@
         (date-year day)
         (iso-8601-date day)))))
 
+(define (play-match db day match)
+  (d "Playing match" match)
+)
+
 (define (find-and-play-matches db day)
   (define matches
     (sqlite3-execute-sql db
@@ -305,8 +309,7 @@
      and m.matchdate < date(?, '1 day')
      and m.finished = 0"
      (list day day)))
-  (unless (null? matches)
-    (d "Found" (length matches) "matches for day" (iso-8601-datetime day)))
+  (for-each (lambda (match) (play-match db day match)) matches)
 )
 
 (define (do-day day)
