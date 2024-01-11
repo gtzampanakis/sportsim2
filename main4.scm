@@ -273,8 +273,7 @@
           (date (date-year day) (car month-day) (cadr month-day))))
         (schedule-matches ci team-ids no-earlier-than)))))
 
-(define (do-day day)
-  (d "Doing day:" (iso-8601-date day))
+(define (find-and-schedule-comps db day)
   ; Schedule competitions that are starting within three months of today and
   ; haven't already been scheduled.
   (for-each
@@ -296,6 +295,10 @@
       (list
         (date-year day)
         (iso-8601-date day)))))
+
+(define (do-day day)
+  (d "Doing day:" (iso-8601-date day))
+  (find-and-schedule-comps db day))
 
 (define (main)
   (migrate)
