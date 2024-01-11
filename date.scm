@@ -13,6 +13,7 @@
   date->ts
   iso-8601-date
   iso-8601-datetime
+  add-hours
   add-day
   add-days
   add-months
@@ -178,6 +179,9 @@
     ((= (remainder year 100) 0) #f)
     ((= (remainder year 4) 0) #t)
     (else #f)))
+
+(define (add-hours date hours)
+  (ts->date (+ (* hours 3600) (date->ts date))))
 
 (define (add-days date days)
   (ts->date (+ (* days 3600 24) (date->ts date))))

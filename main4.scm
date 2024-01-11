@@ -201,11 +201,11 @@
             (comp_inst_id, matchday, matchdate,
              home_team_id, away_team_id, finished)
             values
-            (?, ?, ?, ?, ?, #f)"
+            (?, ?, ?, ?, ?, 0)"
             (list
               ci-id
               matchday-index
-              (iso-8601-date (add-days start-date (* 7 matchday-index)))
+              (add-hours (add-days start-date (* 7 matchday-index)) 19)
               (list-ref team-ids (car teams))
               (list-ref team-ids (cadr teams)))))
         matchday-schedule))
@@ -296,9 +296,24 @@
         (date-year day)
         (iso-8601-date day)))))
 
+(define (find-and-play-matches db day)
+  (define matches
+    (sqlite3-execute-sql db
+     "select *
+     from match m
+     where m.matchdate >= ?
+     and m.matchdate < date(?, '1 day')
+     and m.finished = 0"
+     (list day day)))
+  (unless (null? matches)
+    (d "Found" (length matches) "matches for day" (iso-8601-datetime day)))
+)
+
 (define (do-day day)
   (d "Doing day:" (iso-8601-date day))
-  (find-and-schedule-comps db day))
+  (find-and-schedule-comps db day)
+  (find-and-play-matches db day)
+)
 
 (define (main)
   (migrate)
