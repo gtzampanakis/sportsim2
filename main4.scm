@@ -9,6 +9,7 @@
 (use-modules (math))
 (use-modules (sportsim2))
 (use-modules (db sqlite3))
+(use-modules (manager basic))
 
 (define conf-n-countries 3)
 (define conf-n-teams-per-country 40)
@@ -19,6 +20,9 @@
 (define conf-n-managers-per-country 200)
 (define conf-n-players-per-team 25)
 (define conf-n-managers-per-team 1)
+
+(define contract-status-signed "A")
+(define contract-status-offered "O")
 
 (define db-path "db.db")
 (define db (sqlite3-open db-path))
@@ -119,8 +123,8 @@
     "with recursive cnt(x)
       as (select 1 union all select x+1 from cnt where x<?)
     insert into manager
-    (name, dob)
-    select cnt.x, date(?, '-45 years')
+    (name, dob, module)
+    select cnt.x, date(?, '-45 years'), 'basic'
     from cnt"
     (list
       (*
@@ -129,12 +133,12 @@
       conf-sim-start-date))
   ; playercontract
   (for-each
-    (lambda (t)
+    (lambda (team)
       (sqlite3-execute-sql db
         "insert into playercontract
-        (player_id, team_id, start_date, end_date)
+        (player_id, team_id, start_date, end_date, wage, status)
         select
-        p.id, ?, ?, date(?, '5 years')
+        p.id, ?, ?, date(?, '5 years'), 1000.0, ?
         from player p
         where not exists(
           select 1
@@ -144,19 +148,20 @@
         order by p.id
         limit ?"
         (list
-          t
+          team
           conf-sim-start-date
           conf-sim-start-date
+          contract-status-signed
           conf-n-players-per-team)))
     teams)
   ; playercontract
   (for-each
-    (lambda (t)
+    (lambda (team)
       (sqlite3-execute-sql db
         "insert into managercontract
-        (manager_id, team_id, start_date, end_date)
+        (manager_id, team_id, start_date, end_date, wage, status)
         select
-        m.id, ?, ?, date(?, '5 years')
+        m.id, ?, ?, date(?, '5 years'), 1000.0, ?
         from manager m
         where not exists(
           select 1
@@ -166,9 +171,10 @@
         order by m.id
         limit ?"
         (list
-          t
+          team
           conf-sim-start-date
           conf-sim-start-date
+          contract-status-signed
           conf-n-managers-per-team)))
     teams)
   ; playerattr
@@ -298,6 +304,9 @@
 
 (define (play-match db day match)
   (d "Playing match" match)
+  (d "Match id:" (match 'val 'id))
+  (d "Match matchdate:" (match 'val 'matchdate))
+  (d (match 'as-string))
 )
 
 (define (find-and-play-matches db day)
@@ -309,13 +318,35 @@
      and m.matchdate < date(?, '1 day')
      and m.finished = 0"
      (list day day)))
-  (for-each (lambda (match) (play-match db day match)) matches)
-)
+  (for-each (lambda (match) (play-match db day match)) matches))
+
+(define (get-manager-proc module-desc)
+  (cond
+    ((equal? module-desc 'basic) manager-proc-basic)))
+
+(define (run-manager-actions db day)
+  (define results
+    (sqlite3-execute-sql-get-row-procs db
+      "select t.id, mc.manager_id, m.module
+      from team t
+      join managercontract mc on mc.team_id = t.id
+      join manager m on m.id = mc.manager_id
+      where mc.start_date <= ?
+      and mc.end_date > ?"
+      (list day day)))
+  (for-each
+    (lambda (result-row-proc)
+      ; we need some way to associate a manager-proc with a manager-id
+      (define manager-proc
+        (get-manager-proc (string->symbol (result-row-proc 'val 'module))))
+      (manager-proc db day))
+    results))
 
 (define (do-day day)
   (d "Doing day:" (iso-8601-date day))
   (find-and-schedule-comps db day)
   (find-and-play-matches db day)
+  (run-manager-actions db day)
 )
 
 (define (main)

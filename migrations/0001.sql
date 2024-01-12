@@ -64,7 +64,8 @@ create table player(
 create table manager(
   id integer primary key,
   name text,
-  dob text
+  dob text,
+  module text
 );
 
 create table playerattr(
@@ -81,7 +82,9 @@ create table playercontract(
   player_id integer,
   team_id integer,
   start_date text,
-  end_date text
+  end_date text,
+  wage real,
+  status text
 );
 
 create index playercontract_player_id on playercontract(player_id);
@@ -92,7 +95,9 @@ create table managercontract(
   manager_id integer,
   team_id integer,
   start_date text,
-  end_date text
+  end_date text,
+  wage real,
+  status text
 );
 
 create index managercontract_manager_id on managercontract(manager_id);
