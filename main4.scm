@@ -4,6 +4,7 @@
 (use-modules (ice-9 regex))
 (use-modules (ice-9 string-fun))
 (use-modules (ice-9 textual-ports))
+(use-modules (constants))
 (use-modules (date))
 (use-modules (util))
 (use-modules (math))
@@ -20,9 +21,6 @@
 (define conf-n-managers-per-country 200)
 (define conf-n-players-per-team 25)
 (define conf-n-managers-per-team 1)
-
-(define contract-status-signed "A")
-(define contract-status-offered "O")
 
 (define db-path "db.db")
 (define db (sqlite3-open db-path))
@@ -117,7 +115,7 @@
       (*
         conf-n-players-per-country
         conf-n-countries)
-      conf-sim-start-date))
+      (iso-8601-datetime conf-sim-start-date)))
   ; manager
   (sqlite3-execute-sql db
     "with recursive cnt(x)
@@ -130,7 +128,7 @@
       (*
         conf-n-managers-per-country
         conf-n-countries)
-      conf-sim-start-date))
+      (iso-8601-datetime conf-sim-start-date)))
   ; playercontract
   (for-each
     (lambda (team)
@@ -149,8 +147,8 @@
         limit ?"
         (list
           team
-          conf-sim-start-date
-          conf-sim-start-date
+          (iso-8601-datetime conf-sim-start-date)
+          (iso-8601-datetime conf-sim-start-date)
           contract-status-signed
           conf-n-players-per-team)))
     teams)
@@ -172,8 +170,8 @@
         limit ?"
         (list
           team
-          conf-sim-start-date
-          conf-sim-start-date
+          (iso-8601-datetime conf-sim-start-date)
+          (iso-8601-datetime conf-sim-start-date)
           contract-status-signed
           conf-n-managers-per-team)))
     teams)
@@ -183,14 +181,14 @@
     (player_id, on_date, rat_att, rat_def, rat_vel)
     select id, ?, 1500., 1500., 1500.
     from player"
-    (list conf-sim-start-date))
+    (list (iso-8601-datetime conf-sim-start-date)))
   ; teamfinance
   (sqlite3-execute-sql db
     "insert into teamfinances
     (team_id, on_date, balance)
     select id, ?, 1000 * 1000
     from team"
-    (list conf-sim-start-date)))
+    (list (iso-8601-datetime conf-sim-start-date))))
 
 (define (schedule-matches ci-id team-ids no-earlier-than)
   (define start-date
@@ -211,7 +209,8 @@
             (list
               ci-id
               matchday-index
-              (add-hours (add-days start-date (* 7 matchday-index)) 19)
+              (iso-8601-datetime
+                (add-hours (add-days start-date (* 7 matchday-index)) 19))
               (list-ref team-ids (car teams))
               (list-ref team-ids (cadr teams)))))
         matchday-schedule))
@@ -317,7 +316,7 @@
      where m.matchdate >= ?
      and m.matchdate < date(?, '1 day')
      and m.finished = 0"
-     (list day day)))
+     (list (iso-8601-datetime day) (iso-8601-datetime day))))
   (for-each (lambda (match) (play-match db day match)) matches))
 
 (define (get-manager-proc module-desc)
@@ -327,19 +326,20 @@
 (define (run-manager-actions db day)
   (define results
     (sqlite3-execute-sql-get-row-procs db
-      "select t.id, mc.manager_id, m.module
+      "select t.id team, mc.manager_id manager, m.module
       from team t
       join managercontract mc on mc.team_id = t.id
       join manager m on m.id = mc.manager_id
       where mc.start_date <= ?
       and mc.end_date > ?"
-      (list day day)))
+      (list (iso-8601-datetime day) (iso-8601-datetime day))))
   (for-each
     (lambda (result-row-proc)
       ; we need some way to associate a manager-proc with a manager-id
       (define manager-proc
         (get-manager-proc (string->symbol (result-row-proc 'val 'module))))
-      (manager-proc db day))
+      (manager-proc
+        db day (result-row-proc 'val 'team) (result-row-proc 'val 'manager)))
     results))
 
 (define (do-day day)

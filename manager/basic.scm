@@ -1,11 +1,11 @@
 (define-module (manager basic))
 
+(use-modules (db sqlite3))
+(use-modules (constants))
+
 (export
   manager-proc-basic)
 
-(define (make-player-offers db day)
-  888)
-
 (define manager-proc-basic
-  (lambda (db day)
-    (make-player-offers db day)))
+  (lambda (db day team manager)
+    5))

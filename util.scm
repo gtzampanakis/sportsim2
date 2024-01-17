@@ -1,5 +1,6 @@
 (define-module (util))
 
+(use-modules (ice-9 match))
 (use-modules (srfi srfi-1))
 (use-modules (srfi srfi-11))
 (use-modules (srfi srfi-43))
@@ -20,12 +21,17 @@
 (define-public (prod ls)
   (fold * 1 ls))
 
-(define-public (range s n)
-; List of integers >= s and < n.
-  (let loop ((i n) (r '()))
-    (if (<= i s)
-      r
-      (loop (1- i) (cons (1- i) r)))))
+(define-public range
+    (lambda args
+        (define (range-inner s n)
+        ; List of integers >= s and < n.
+          (let loop ((i n) (r '()))
+            (if (<= i s)
+              r
+              (loop (1- i) (cons (1- i) r)))))
+        (match args
+            ((n) (range-inner 0 n))
+            ((s n) (range-inner s n)))))
 
 (define-public (same n l)
   (if (= l 0)
