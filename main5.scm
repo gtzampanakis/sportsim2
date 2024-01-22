@@ -104,16 +104,17 @@
             string-append
             (map symbol->string symbols))))
 
-(define (run-query db tables filter-proc)
+(define (run-query db tables-in filter-proc)
+    (define tables (if (not (list? tables-in)) (list tables-in) tables-in))
     (define recs
         (let loop ((tables tables) (first #t) (results '()))
             (if (null? tables)
                 results
                 (if first
-                    (let ((table (symbol-append '< (car tables) '>)))
-                        (loop
-                            (cdr tables)
-                            #f
+                    (loop
+                        (cdr tables)
+                        #f
+                        (let ((table (car tables)))
                             (hash-ref db table)))
                     (loop
                         (cdr tables)
@@ -130,7 +131,48 @@
                                 results)))))))
     (filter filter-proc recs))
 
-(define (init-country db)
+(define combined-filter-proc
+    (lambda filter-procs
+        (lambda (rec)
+            (let loop ((filter-procs filter-procs))
+                (if (null? filter-procs)
+                    #t
+                    (let ((r ((car filter-procs) rec)))
+                        (if r
+                            (loop (cdr filter-procs))
+                            #f)))))))
+
+(define-syntax rec-spec-or-val
+    (syntax-rules ()
+        ((_ rec (table attr))
+            (slot-ref rec 'attr))
+        ((_ rec val)
+            val)))
+
+(define-syntax filter-proc-single
+    (syntax-rules ()
+        ((_ proc arg ...)
+            (lambda (rec)
+                (proc (rec-spec-or-val rec arg) ...)))))
+
+(define-syntax filter-proc
+    (syntax-rules ()
+        ((_ (filter-proc-single-proc filter-proc-single-arg ...) ...)
+            (combined-filter-proc
+                (filter-proc-single
+                    filter-proc-single-proc filter-proc-single-arg ...) ...))))
+
+
+(define (init-contract db)
+    (define teams
+        (run-query
+            db
+            '<team>
+            (filter-proc
+                (equal? 1 1))))
+    (d teams))
+
+(define (init-sim db)
     (for-each
         (lambda (_)
             (let ((country (make <country> #:id (get-id))))
@@ -138,25 +180,12 @@
                 (init-team db country)
                 (init-player db country)
                 (init-manager db country)))
-        (range conf-n-countries)))
-
-(define (init-sim db)
-    (init-country db))
+        (range conf-n-countries))
+    (init-contract db))
 
 (define (main)
     (define db (make-db))
     (init-sim db)
-    ;(map
-    ;    describe
-    ;    (run-query
-    ;        db
-    ;        (list 'country 'manager)
-    ;        (lambda (rec) (equal? (slot-ref rec 'id) 2043))))
 )
-
-"
-('id 5) (
-"
-
 
 (main)
