@@ -11,6 +11,7 @@
 (define conf-n-countries 3)
 (define conf-n-teams-per-country 40)
 (define conf-n-players-per-team 22)
+(define conf-n-managers-per-team 1)
 (define conf-n-players-per-country 2000)
 (define conf-n-managers-per-country 200)
 
@@ -181,7 +182,19 @@
             #:wage 1000.0
             #:status 'signed)))
 
-(define (init-contract db country)
+(define (initial-assign-manager-to-team db manager team)
+    (db-insert-rec db
+        (make <manager-contract>
+            #:id (get-id)
+            #:manager manager
+            #:team team
+            #:date-start conf-sim-start-date
+            #:date-end
+                (add-days conf-sim-start-date (* 5 365))
+            #:wage 1000.0
+            #:status 'signed)))
+
+(define (init-player-contract db country)
     (define teams
         (run-query db '<team>
             (lambda (t) (equal? (slot-ref t 'country) country))))
@@ -196,6 +209,21 @@
                 (take players conf-n-players-per-team))
             (loop (cdr teams) (drop players conf-n-players-per-team)))))
 
+(define (init-manager-contract db country)
+    (define teams
+        (run-query db '<team>
+            (lambda (t) (equal? (slot-ref t 'country) country))))
+    (define managers
+        (run-query db '<manager>
+            (lambda (p) (equal? (slot-ref p 'country) country))))
+    (let loop ((teams teams) (managers managers))
+        (unless (null? teams)
+            (for-each
+                (lambda (manager)
+                    (initial-assign-manager-to-team db manager (car teams)))
+                (take managers conf-n-managers-per-team))
+            (loop (cdr teams) (drop managers conf-n-managers-per-team)))))
+
 (define (init-sim db)
     (for-each
         (lambda (_)
@@ -204,7 +232,8 @@
                 (init-team db country)
                 (init-player db country)
                 (init-manager db country)
-                (init-contract db country)))
+                (init-player-contract db country)
+                (init-manager-contract db country)))
         (range conf-n-countries)))
 
 (define (main)
