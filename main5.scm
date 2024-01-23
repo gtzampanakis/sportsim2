@@ -130,9 +130,9 @@
 
 (define-syntax col-spec-or-val
     (syntax-rules (col-spec)
-        ((_ result-set (col-spec table col))
+        ((_ result-set (col-spec alias col))
             (slot-ref
-                (assoc-ref result-set table)
+                (assoc-ref result-set alias)
                 col))
         ((_ result-set (elem ...))
             ((col-spec-or-val result-set elem) ...))
@@ -141,25 +141,9 @@
 
 (define-syntax filter-spec-to-proc
     (syntax-rules ()
-        ((_ result-set arg ...)
+        ((_ arg ...)
             (lambda (result-set-row)
-                (col-spec-or-val result-set arg) ...))))
-
-;(let* (
-;        (country (make <country> #:id 234))
-;        (result-set (list (cons 'country country))))
-;    (d
-;        (
-;            (filter-spec-to-proc
-;                result-set
-;                (and
-;                    (equal? 5 5)
-;                    (equal? 5 5)
-;                    (equal? 5 5)
-;                    (equal? 5 5)
-;                    (equal? (col-spec 'country 'id) 234)
-;                    (or #t)))
-;            country)))
+                (col-spec-or-val result-set-row arg) ...))))
 
 (define (symbol-strip-first-and-last sym)
     (string->symbol
@@ -240,12 +224,12 @@
 (define (init-player-contract db country)
     (define teams
         (run-query db '<team>
-            (lambda (r)
-                (equal? (slot-ref (assoc-ref r '<team>) 'country) country))))
+            (filter-spec-to-proc
+                (equal? (col-spec '<team> 'country) country))))
     (define players
         (run-query db '<player>
-            (lambda (r)
-                (equal? (slot-ref (assoc-ref r '<player>) 'country) country))))
+            (filter-spec-to-proc
+                (equal? (col-spec '<player> 'country) country))))
     (let loop ((teams teams) (players players))
         (unless (null? teams)
             (for-each
@@ -257,12 +241,12 @@
 (define (init-manager-contract db country)
     (define teams
         (run-query db '<team>
-            (lambda (r)
-                (equal? (slot-ref (assoc-ref r '<team>) 'country) country))))
+            (filter-spec-to-proc
+                (equal? (col-spec '<team> 'country) country))))
     (define managers
         (run-query db '<manager>
-            (lambda (r)
-                (equal? (slot-ref (assoc-ref r '<manager>) 'country) country))))
+            (filter-spec-to-proc
+                (equal? (col-spec '<manager> 'country) country))))
     (let loop ((teams teams) (managers managers))
         (unless (null? teams)
             (for-each
