@@ -5,8 +5,9 @@
 (use-modules (oop goops describe))
 (use-modules (util))
 
-(define conf-sim-start-date (date 2023 5 1))
-(define conf-sim-end-date (date 2025 5 1))
+(define conf-sim-start-year 2023)
+(define conf-sim-start-date (date conf-sim-start-year 5 1))
+(define conf-sim-end-date (date (+ 2 conf-sim-start-year) 5 1))
 
 (define conf-n-countries 3)
 (define conf-n-teams-per-country 40)
@@ -48,6 +49,27 @@
 
 (define-class <manager-contract> (<contract>)
     (manager #:init-keyword #:manager))
+
+(define-class <competition> (<rec>)
+    (id #:init-keyword #:id)
+    (name #:init-keyword #:name)
+    (start-month #:init-keyword #:start-month)
+    (start-day #:init-keyword #:start-day))
+
+(define-class <competition-instance> (<rec>)
+    (id #:init-keyword #:id)
+    (competition #:init-keyword #:competition)
+    (country #:init-keyword #:country)
+    (season #:init-keyword #:season))
+
+(define-class <match> (<rec>)
+    (id #:init-keyword #:id)
+    (team-home #:init-keyword #:team-home)
+    (team-away #:init-keyword #:team-away)
+    (score-home #:init-keyword #:score-home)
+    (score-away #:init-keyword #:score-away)
+    (done #:init-keyword #:done)
+    (datetime #:init-keyword #:datetime))
 
 (define (make-db) (make-hash-table))
 
@@ -106,14 +128,59 @@
             string-append
             (map symbol->string symbols))))
 
+(define-syntax col-spec-or-val
+    (syntax-rules (col-spec)
+        ((_ result-set (col-spec table col))
+            (slot-ref
+                (assoc-ref result-set table)
+                col))
+        ((_ result-set (elem ...))
+            ((col-spec-or-val result-set elem) ...))
+        ((_ result-set val)
+            val)))
+
+(define-syntax filter-spec-to-proc
+    (syntax-rules ()
+        ((_ result-set arg ...)
+            (lambda (result-set-row)
+                (col-spec-or-val result-set arg) ...))))
+
+;(let* (
+;        (country (make <country> #:id 234))
+;        (result-set (list (cons 'country country))))
+;    (d
+;        (
+;            (filter-spec-to-proc
+;                result-set
+;                (and
+;                    (equal? 5 5)
+;                    (equal? 5 5)
+;                    (equal? 5 5)
+;                    (equal? 5 5)
+;                    (equal? (col-spec 'country 'id) 234)
+;                    (or #t)))
+;            country)))
+
+(define (symbol-strip-first-and-last sym)
+    (string->symbol
+        (let ((str (symbol->string sym)))
+            (substring str 1 (1- (string-length str))))))
+
+(define (rec-table-set rec table)
+    (let (
+            (attr
+                (symbol-append
+                    (symbol-strip-first-and-last table) '-set)))
+        (slot-ref rec attr)))
+
 (define run-query
     (case-lambda
         ((db tables-in)
-            (run-query db tables-in (lambda (rec) #t)))
+            (run-query db tables-in (lambda (result-set-row) #t)))
         ((db tables-in filter-proc)
             (define tables
                 (if (not (list? tables-in)) (list tables-in) tables-in))
-            (define recs
+            (define result-set
                 (let loop ((tables tables) (first #t) (results '()))
                     (if (null? tables)
                         results
@@ -122,53 +189,29 @@
                                 (cdr tables)
                                 #f
                                 (let ((table (car tables)))
-                                    (hash-ref db table)))
+                                    (map
+                                        (lambda (rec)
+                                            (list (cons table rec)))
+                                        (hash-ref db table))))
                             (loop
                                 (cdr tables)
                                 #f
                                 (apply
                                     append
                                     (map
-                                        (lambda (rec)
-                                            (let (
-                                                    (attr
-                                                        (symbol-append
+                                        (lambda (result)
+                                            (map
+                                                (lambda (set-element)
+                                                    (cons
+                                                        (cons
                                                             (car tables)
-                                                            '-set)))
-                                                (slot-ref rec attr)))
+                                                            set-element)
+                                                        result))
+                                                (rec-table-set
+                                                    (cdar result)
+                                                    (car tables))))
                                         results)))))))
-            (filter filter-proc recs))))
-
-(define combined-filter-proc
-    (lambda filter-procs
-        (lambda (rec)
-            (let loop ((filter-procs filter-procs))
-                (if (null? filter-procs)
-                    #t
-                    (let ((r ((car filter-procs) rec)))
-                        (if r
-                            (loop (cdr filter-procs))
-                            #f)))))))
-
-(define-syntax rec-spec-or-val
-    (syntax-rules ()
-        ((_ rec (table attr))
-            (slot-ref rec 'attr))
-        ((_ rec val)
-            val)))
-
-(define-syntax filter-proc-single
-    (syntax-rules ()
-        ((_ proc arg ...)
-            (lambda (rec)
-                (proc (rec-spec-or-val rec arg) ...)))))
-
-(define-syntax filter-proc
-    (syntax-rules ()
-        ((_ (filter-proc-single-proc filter-proc-single-arg ...) ...)
-            (combined-filter-proc
-                (filter-proc-single
-                    filter-proc-single-proc filter-proc-single-arg ...) ...))))
+            (filter filter-proc result-set))))
 
 (define (initial-assign-player-to-team db player team)
     (db-insert-rec db
@@ -197,10 +240,12 @@
 (define (init-player-contract db country)
     (define teams
         (run-query db '<team>
-            (lambda (t) (equal? (slot-ref t 'country) country))))
+            (lambda (r)
+                (equal? (slot-ref (assoc-ref r '<team>) 'country) country))))
     (define players
         (run-query db '<player>
-            (lambda (p) (equal? (slot-ref p 'country) country))))
+            (lambda (r)
+                (equal? (slot-ref (assoc-ref r '<player>) 'country) country))))
     (let loop ((teams teams) (players players))
         (unless (null? teams)
             (for-each
@@ -212,10 +257,12 @@
 (define (init-manager-contract db country)
     (define teams
         (run-query db '<team>
-            (lambda (t) (equal? (slot-ref t 'country) country))))
+            (lambda (r)
+                (equal? (slot-ref (assoc-ref r '<team>) 'country) country))))
     (define managers
         (run-query db '<manager>
-            (lambda (p) (equal? (slot-ref p 'country) country))))
+            (lambda (r)
+                (equal? (slot-ref (assoc-ref r '<manager>) 'country) country))))
     (let loop ((teams teams) (managers managers))
         (unless (null? teams)
             (for-each
@@ -224,7 +271,26 @@
                 (take managers conf-n-managers-per-team))
             (loop (cdr teams) (drop managers conf-n-managers-per-team)))))
 
+(define (init-competition db)
+    (db-insert-rec db
+        (make <competition>
+            #:id (get-id)
+            #:name "League")))
+
+(define (init-competition-instance db country)
+    (define competition
+        (car
+            (run-query db '<competition>
+                (lambda (c) (equal? (slot-ref c 'name) "League")))))
+    (db-insert-rec db
+        (make <competition-instance>
+            #:id (get-id)
+            #:competition competition
+            #:country country
+            #:season conf-sim-start-year)))
+
 (define (init-sim db)
+    (init-competition db)
     (for-each
         (lambda (_)
             (let ((country (make <country> #:id (get-id))))
@@ -236,9 +302,22 @@
                 (init-manager-contract db country)))
         (range conf-n-countries)))
 
+
+(define (do-day db date)
+    5)
+
 (define (main)
     (define db (make-db))
     (init-sim db)
-)
+    (for-each
+        d
+        (run-query db
+            (list '<country> '<player>)))
+    (exit)
+    (let loop ((current-date conf-sim-start-date))
+        (unless (equal? current-date conf-sim-end-date)
+            (d "Current date" (iso-8601-date current-date))
+            (do-day db current-date)
+            (loop (add-day current-date)))))
 
 (main)
