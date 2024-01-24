@@ -72,11 +72,31 @@
     (done #:init-keyword #:done)
     (datetime #:init-keyword #:datetime))
 
-(define (make-db) (make-hash-table))
+(define (db-create-table db class)
+    (hash-set! db (class-name class) '()))
+
+(define (db-create-tables db)
+    (for-each
+        (lambda (class) (db-create-table db class))
+        (list
+            <country>
+            <team>
+            <player>
+            <manager>
+            <player-contract>
+            <manager-contract>
+            <competition>
+            <competition-instance>
+            <match>)))
+
+(define (make-db)
+    (define db (make-hash-table))
+    (db-create-tables db)
+    db)
 
 (define (db-insert-rec db rec)
     (define name (class-name (class-of rec)))
-    (define table (or (hash-ref db name) '()))
+    (define table (hash-ref db name))
     (set! table (cons rec table))
     (hash-set! db name table))
 
@@ -320,7 +340,7 @@
                         db season competition country)
     (define existing
         (query-results db
-            '<competition-instance>
+            '<competition-instance> ; create this in the database first (better to create all tables rather than rely on db-insert-rec to create them)
             (filter-spec-to-proc
                 (and
                     (equal?
