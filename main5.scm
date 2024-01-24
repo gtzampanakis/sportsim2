@@ -1,4 +1,5 @@
 (use-modules (srfi srfi-1))
+(use-modules (srfi srfi-19))
 (use-modules (ice-9 match))
 (use-modules (date))
 (use-modules (oop goops))
@@ -157,11 +158,15 @@
                     (symbol-strip-first-and-last table) '-set)))
         (slot-ref rec attr)))
 
-(define run-query
+(define query-results
     (case-lambda
         ((db tables-in)
-            (run-query db tables-in (lambda (result-set-row) #t)))
+            (query-results db tables-in #f))
         ((db tables-in filter-proc)
+            (query-results db tables-in filter-proc #f))
+        ((db tables-in filter-proc order-by)
+            (query-results db tables-in filter-proc order-by #f))
+        ((db tables-in filter-proc order-by limit)
             (define tables
                 (if (not (list? tables-in)) (list tables-in) tables-in))
             (define result-set
@@ -195,7 +200,23 @@
                                                     (cdar result)
                                                     (car tables))))
                                         results)))))))
-            (filter filter-proc result-set))))
+            (let (
+                    (filtered
+                        (if filter-proc
+                            (filter filter-proc result-set)
+                            result-set)))
+                (let (
+                        (ordered
+                            (if order-by
+                                (sort filtered order-by)
+                                filtered)))
+                    (let (
+                            (limited
+                                (if limit (take limit ordered) ordered)))
+                        limited))))))
+
+(define (query-exists db tables-in filter-proc)
+    (not (null? (query-results db tables-in filter-proc #f 1))))
 
 (define (initial-assign-player-to-team db player team)
     (db-insert-rec db
@@ -204,8 +225,9 @@
             #:player player
             #:team team
             #:date-start conf-sim-start-date
+            ; this should go up to next 
             #:date-end
-                (add-days conf-sim-start-date (* 5 365))
+                (add-years conf-sim-start-date 5)
             #:wage 1000.0
             #:status 'signed)))
 
@@ -217,17 +239,17 @@
             #:team team
             #:date-start conf-sim-start-date
             #:date-end
-                (add-days conf-sim-start-date (* 5 365))
+                (add-years conf-sim-start-date 5)
             #:wage 1000.0
             #:status 'signed)))
 
 (define (init-player-contract db country)
     (define teams
-        (run-query db '<team>
+        (query-results db '<team>
             (filter-spec-to-proc
                 (equal? (col-spec '<team> 'country) country))))
     (define players
-        (run-query db '<player>
+        (query-results db '<player>
             (filter-spec-to-proc
                 (equal? (col-spec '<player> 'country) country))))
     (let loop ((teams teams) (players players))
@@ -240,11 +262,11 @@
 
 (define (init-manager-contract db country)
     (define teams
-        (run-query db '<team>
+        (query-results db '<team>
             (filter-spec-to-proc
                 (equal? (col-spec '<team> 'country) country))))
     (define managers
-        (run-query db '<manager>
+        (query-results db '<manager>
             (filter-spec-to-proc
                 (equal? (col-spec '<manager> 'country) country))))
     (let loop ((teams teams) (managers managers))
@@ -259,12 +281,14 @@
     (db-insert-rec db
         (make <competition>
             #:id (get-id)
-            #:name "League")))
+            #:name "League"
+            #:start-month 8
+            #:start-day 1)))
 
 (define (init-competition-instance db country)
     (define competition
         (car
-            (run-query db '<competition>
+            (query-results db '<competition>
                 (lambda (c) (equal? (slot-ref c 'name) "League")))))
     (db-insert-rec db
         (make <competition-instance>
@@ -286,18 +310,62 @@
                 (init-manager-contract db country)))
         (range conf-n-countries)))
 
+(define (next-date-with-given-month-day as-of month day)
+    (define candidate (date (date-year as-of) month day))
+    (if (date>=? candidate as-of)
+        candidate
+        (add-years candidate 1)))
 
-(define (do-day db date)
-    5)
+(define (create-comp-instance-and-schedule-league
+                        db season competition country)
+    (define existing
+        (query-results db
+            '<competition-instance>
+            (filter-spec-to-proc
+                (and
+                    (equal?
+                        (col-spec
+                            '<competition-instance> 'season season))
+                    (equal?
+                        (col-spec
+                            '<competition-instance> 'country country))
+                    (equal?
+                        (col-spec
+                            '<competition-instance> 'competition competition))))))
+    (d 'existing existing))
+
+(define (find-leagues-to-schedule db current-date)
+    (for-each
+        (lambda (result-set-row)
+            (define country (assoc-ref result-set-row '<country>))
+            (for-each
+                (lambda (result-set-row)
+                    (define competition
+                        (assoc-ref result-set-row '<competition>))
+                    (define next-season-start
+                        (next-date-with-given-month-day
+                            current-date
+                            (slot-ref competition 'start-month)
+                            (slot-ref competition 'start-day)))
+                    (when
+                        (<
+                            (date-- next-season-start current-date)
+                            (* 3 30 24 3600))
+                        (create-comp-instance-and-schedule-league
+                            db
+                            (date-year next-season-start)
+                            competition country)))
+                (query-results db '<competition>
+                    (filter-spec-to-proc
+                        (equal? (col-spec '<competition> 'name) "League")))))
+        (query-results db '<country>)))
+
+(define (do-day db current-date)
+    (find-leagues-to-schedule db current-date))
 
 (define (main)
     (define db (make-db))
     (init-sim db)
-    (for-each
-        d
-        (run-query db
-            (list '<country> '<player>)))
-    (exit)
     (let loop ((current-date conf-sim-start-date))
         (unless (equal? current-date conf-sim-end-date)
             (d "Current date" (iso-8601-date current-date))

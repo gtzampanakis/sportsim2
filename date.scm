@@ -9,6 +9,7 @@
   date<=?
   date>?
   date>=?
+  date--
   ts->date
   date->ts
   iso-8601-date
@@ -18,7 +19,6 @@
   add-days
   add-months
   add-years
-  next-date-for-schedule
 )
 
 (define (lpad s l c)
@@ -274,37 +274,5 @@
 (define (date>=? d1 d2)
   (>= (compare-dates d1 d2) 0))
 
-(define (date-matches? date-in year month day)
-  (and
-    (or (null? year) (= (date-year date-in) year))
-    (or (null? month) (= (date-month date-in) month))
-    (or (null? day) (= (date-day date-in) day))))
-
-(define (max-date-that-matches year month day)
-  (cond
-    ((null? year) #f)
-    ((and (not (null? month)) (not (null? day))) (date year month day))
-    ((and (not (null? month)) (null? day))
-      (add-days (add-months (date year month 1) 1) -1))
-    ((and (null? month) (not (null? day)))
-      (date year 12 day))
-    ((and (null? month) (null? day))
-      (date year 12 31))))
-
-(define
-    (next-date-for-schedule as-of-date
-      schedule-year schedule-month schedule-day)
-  (define max-date-for-schedule
-    (max-date-that-matches schedule-year schedule-month schedule-day))
-  (define result
-    (let loop ((as-of-date as-of-date))
-      (if (and
-            (date? max-date-for-schedule)
-            (date>? as-of-date max-date-for-schedule))
-        #f
-        (let ()
-          (if (date-matches?
-                as-of-date schedule-year schedule-month schedule-day)
-            as-of-date
-            (loop (add-day as-of-date)))))))
-  result)
+(define (date-- d1 d2)
+    (- (date->ts d1) (date->ts d2)))
