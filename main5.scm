@@ -8,7 +8,7 @@
 
 (define conf-sim-start-year 2023)
 (define conf-sim-start-date (date conf-sim-start-year 5 1))
-(define conf-sim-end-date (date (+ 2 conf-sim-start-year) 5 1))
+(define conf-sim-end-date (date (+ 3 conf-sim-start-year) 5 1))
 
 (define conf-n-countries 3)
 (define conf-n-teams-per-country 40)
@@ -63,6 +63,11 @@
     (country #:init-keyword #:country)
     (season #:init-keyword #:season))
 
+(define-class <competition-instance-team> (<rec>)
+    (id #:init-keyword #:id)
+    (competition-instance #:init-keyword #:competition-instance)
+    (team #:init-keyword #:team))
+
 (define-class <match> (<rec>)
     (id #:init-keyword #:id)
     (team-home #:init-keyword #:team-home)
@@ -87,6 +92,7 @@
             <manager-contract>
             <competition>
             <competition-instance>
+            <competition-instance-team>
             <match>)))
 
 (define (make-db)
@@ -150,7 +156,9 @@
             (map symbol->string symbols))))
 
 (define-syntax col-spec-or-val
-    (syntax-rules (col-spec)
+    (syntax-rules (col-spec quote)
+        ((_ result-set (quote val))
+            (quote val))
         ((_ result-set (col-spec alias col))
             (slot-ref
                 (assoc-ref result-set alias)
@@ -178,6 +186,70 @@
                     (symbol-strip-first-and-last table) '-set)))
         (slot-ref rec attr)))
 
+(define (-query-results db tables-in filter-proc order-by limit)
+    (define tables
+        (if (not (list? tables-in)) (list tables-in) tables-in))
+    (define result-set
+        (let loop ((tables tables) (first #t) (results '()))
+            (if (null? tables)
+                results
+                (if first
+                    (loop
+                        (cdr tables)
+                        #f
+                        (let ((table (car tables)))
+                            (map
+                                (lambda (rec)
+                                    (list (cons table rec)))
+                                (hash-ref db table))))
+                    (loop
+                        (cdr tables)
+                        #f
+                        (apply
+                            append
+                            (map
+                                (lambda (result)
+                                    (if
+                                        (slot-exists?
+                                            (cdar result)
+                                            (symbol-strip-first-and-last
+                                                (car tables)))
+                                        (list
+                                            (cons
+                                                (cons
+                                                    (car tables)
+                                                    (slot-ref
+                                                        (cdar result)
+                                                        (symbol-strip-first-and-last
+                                                            (car tables))))
+                                                result))
+                                        (map
+                                            (lambda (set-element)
+                                                (cons
+                                                    (cons
+                                                        (car tables)
+                                                        set-element)
+                                                    result))
+                                            (rec-table-set
+                                                (cdar result)
+                                                (car tables)))))
+                                results)))))))
+    (let (
+            (filtered
+                (if filter-proc
+                    (filter filter-proc result-set)
+                    result-set)))
+        (let (
+                (ordered
+                    (if order-by
+                        (sort filtered order-by)
+                        filtered)))
+            (let (
+                    (limited
+                        (if limit
+                            (take-n-or-fewer ordered limit) ordered)))
+                limited))))
+
 (define query-results
     (case-lambda
         ((db tables-in)
@@ -187,56 +259,21 @@
         ((db tables-in filter-proc order-by)
             (query-results db tables-in filter-proc order-by #f))
         ((db tables-in filter-proc order-by limit)
-            (define tables
-                (if (not (list? tables-in)) (list tables-in) tables-in))
-            (define result-set
-                (let loop ((tables tables) (first #t) (results '()))
-                    (if (null? tables)
-                        results
-                        (if first
-                            (loop
-                                (cdr tables)
-                                #f
-                                (let ((table (car tables)))
-                                    (map
-                                        (lambda (rec)
-                                            (list (cons table rec)))
-                                        (hash-ref db table))))
-                            (loop
-                                (cdr tables)
-                                #f
-                                (apply
-                                    append
-                                    (map
-                                        (lambda (result)
-                                            (map
-                                                (lambda (set-element)
-                                                    (cons
-                                                        (cons
-                                                            (car tables)
-                                                            set-element)
-                                                        result))
-                                                (rec-table-set
-                                                    (cdar result)
-                                                    (car tables))))
-                                        results)))))))
-            (let (
-                    (filtered
-                        (if filter-proc
-                            (filter filter-proc result-set)
-                            result-set)))
-                (let (
-                        (ordered
-                            (if order-by
-                                (sort filtered order-by)
-                                filtered)))
-                    (let (
-                            (limited
-                                (if limit (take limit ordered) ordered)))
-                        limited))))))
+            (-query-results db tables-in filter-proc order-by limit))))
 
 (define (query-exists db tables-in filter-proc)
     (not (null? (query-results db tables-in filter-proc #f 1))))
+
+(define query-first
+    (case-lambda
+        ((db tables-in)
+            (query-first db tables-in #f))
+        ((db tables-in filter-proc)
+            (query-first db tables-in filter-proc #f))
+        ((db tables-in filter-proc order-by)
+            (let ((results
+                    (query-results db tables-in filter-proc order-by 1)))
+                (if (null? results) results (car results))))))
 
 (define (initial-assign-player-to-team db player team)
     (db-insert-rec db
@@ -336,23 +373,121 @@
         candidate
         (add-years candidate 1)))
 
+(define (gen-round-robin n)
+; https://en.wikipedia.org/wiki/Round-robin_tournament#Circle_method
+    ; Call cdr to cycle once. This makes the schedule nicer-looking by having the
+    ; 0 play the opponents in order.
+    (define cycle (cdr (range-cycle 1 n)))
+    (define first-round-days
+        (let loop-days ((cycle cycle) (i 0) (r '()) (played-home-last-day '()))
+            (if (< i (1- n))
+                (let ((full (cons 0 cycle)))
+                    (let (
+                        (day-pairs
+                            (map
+                                (lambda (k)
+                                    (let (
+                                            (team0 (list-ref full k))
+                                            (team1 (list-ref full (- n 1 k))))
+                                        (if
+                                            (and
+                                                (memq
+                                                    team0 played-home-last-day)
+                                                (not
+                                                    (memq
+                                                        team1
+                                                        played-home-last-day)))
+                                            (list team1 team0)
+                                            (list team0 team1))))
+                                (range 0 (/ n 2)))))
+                        (loop-days
+                            (cdr cycle)
+                            (1+ i)
+                            (cons day-pairs r)
+                            (map car day-pairs))))
+                r)))
+    (append
+        first-round-days
+        (map
+            (lambda (day-pairs)
+                (map (lambda (match) (reverse match)) day-pairs))
+            first-round-days)))
+
 (define (create-comp-instance-and-schedule-league
                         db season competition country)
     (define existing
-        (query-results db
-            '<competition-instance> ; create this in the database first (better to create all tables rather than rely on db-insert-rec to create them)
+        (query-exists db
+            '<competition-instance>
             (filter-spec-to-proc
                 (and
                     (equal?
-                        (col-spec
-                            '<competition-instance> 'season season))
+                        (col-spec '<competition-instance> 'season)
+                        season)
                     (equal?
-                        (col-spec
-                            '<competition-instance> 'country country))
+                        (col-spec '<competition-instance> 'country)
+                        country)
                     (equal?
-                        (col-spec
-                            '<competition-instance> 'competition competition))))))
-    (d 'existing existing))
+                        (col-spec '<competition-instance> 'competition)
+                        competition)))))
+    (unless existing
+        ; Find previous <competition-instance-team> records and copy them to
+        ; this season (promotion and relegation not yet implemented).
+        (let* (
+            (new-competition-instance
+                (make <competition-instance>
+                    #:id (get-id)
+                    #:season season
+                    #:country country
+                    #:competition competition))
+            (last-competition-instance-result-set-row
+                (query-first db
+                    '<competition-instance>
+                    (filter-spec-to-proc
+                        (and
+                            (equal?
+                                (col-spec '<competition-instance> 'season)
+                                (1- season))
+                            (equal?
+                                (col-spec '<competition-instance> 'country)
+                                country)
+                            (equal?
+                                (col-spec '<competition-instance> 'competition)
+                                competition)))))
+            (teams
+                (if (null? last-competition-instance-result-set-row)
+                    (map
+                        (lambda (result-set-row)
+                            (assoc-ref result-set-row '<team>))
+                        (query-results db
+                            '<team>
+                            (filter-spec-to-proc
+                                (equal?
+                                    (col-spec '<team> 'country)
+                                    country))))
+                    (map
+                        (lambda (result-set-row)
+                            (assoc-ref result-set-row '<team>))
+                        (query-results db
+                            (list '<competition-instance-team> '<team>)
+                            (filter-spec-to-proc
+                                (equal?
+                                    (col-spec
+                                        '<competition-instance-team>
+                                        'competition-instance)
+                                    (assoc-ref
+                                        last-competition-instance-result-set-row
+                                        '<competition-instance>))))))))
+            (d 'foobar country (length teams))
+            (db-insert-rec db new-competition-instance)
+            (for-each
+                (lambda (team)
+                    (db-insert-rec db
+                        (make <competition-instance-team>
+                            #:id (get-id)
+                            #:competition-instance new-competition-instance
+                            #:team team)))
+                teams))
+        5))
 
 (define (find-leagues-to-schedule db current-date)
     (for-each
