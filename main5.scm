@@ -12,6 +12,7 @@
 
 (define conf-n-countries 3)
 (define conf-n-teams-per-country 40)
+(define conf-n-teams-per-division 14)
 (define conf-n-players-per-team 22)
 (define conf-n-managers-per-team 1)
 (define conf-n-players-per-country 2000)
@@ -75,7 +76,8 @@
     (score-home #:init-keyword #:score-home)
     (score-away #:init-keyword #:score-away)
     (done #:init-keyword #:done)
-    (datetime #:init-keyword #:datetime))
+    (datetime #:init-keyword #:datetime)
+    (competition-instance #:init-keyword #:competition-instance))
 
 (define (db-create-table db class)
     (hash-set! db (class-name class) '()))
@@ -155,10 +157,8 @@
             string-append
             (map symbol->string symbols))))
 
-(define-syntax col-spec
-    (syntax-rules ()
-        ((_ result-set-row alias col)
-            (slot-ref (assoc-ref result-set-row alias) col))))
+(define (col-spec result-set-row alias col)
+    (slot-ref (assoc-ref result-set-row alias) col))
 
 (define (symbol-strip-first-and-last sym)
     (string->symbol
@@ -412,7 +412,9 @@
                 (lambda (r)
                     (equal?
                         (col-spec r '<team> 'country)
-                        country))))
+                        country))
+                #f
+                conf-n-teams-per-division))
         (map
             (lambda (result-set-row)
                 (assoc-ref result-set-row '<team>))
@@ -427,8 +429,38 @@
                             last-competition-instance-result-set-row
                             '<competition-instance>)))))))
 
+(define (schedule-league-season db first-date competition-instance)
+    (define teams
+        (query-results db
+            '<competition-instance-team>
+            (lambda (r)
+                (equal?
+                    (col-spec r
+                        '<competition-instance-team>
+                        'competition-instance)
+                    competition-instance))))
+    (d 'goobar (length teams))
+    (define schedule-days (gen-round-robin (length teams)))
+    (for-each
+        (lambda (day dayi)
+            (for-each
+                (lambda (match-teams)
+                    (define match
+                        (make <match>
+                            #:id (get-id)
+                            #:team-home (list-ref teams (car match-teams))
+                            #:team-away (list-ref teams (cadr match-teams))
+                            #:done 0
+                            #:datetime (add-days first-date (* dayi 7))
+                            #:competition-instance competition-instance))
+                    (db-insert-rec db match))
+                day))
+        schedule-days
+        (range 0 (length schedule-days))))
+
 (define (create-comp-instance-and-schedule-league
-                        db season competition country)
+                        db first-date competition country)
+    (define season (date-year first-date))
     (define existing
         (query-exists db
             '<competition-instance>
@@ -470,7 +502,6 @@
             (teams (
                 get-teams-for-new-competition-instance
                 db country last-competition-instance-result-set-row)))
-            (d 'foobar country (length teams))
             (db-insert-rec db new-competition-instance)
             (for-each
                 (lambda (team)
@@ -479,8 +510,15 @@
                             #:id (get-id)
                             #:competition-instance new-competition-instance
                             #:team team)))
-                teams))
+                teams)
+            (schedule-league-season db first-date new-competition-instance))
         5))
+
+(define (next-date-with-given-weekday date weekday)
+    (let loop ((date date))
+        (if (= (date-week-day date) weekday)
+            date
+            (loop (add-day date)))))
 
 (define (find-leagues-to-schedule db current-date)
     (for-each
@@ -491,17 +529,19 @@
                     (define competition
                         (assoc-ref result-set-row '<competition>))
                     (define next-season-start
-                        (next-date-with-given-month-day
-                            current-date
-                            (slot-ref competition 'start-month)
-                            (slot-ref competition 'start-day)))
+                        (next-date-with-given-weekday
+                            (next-date-with-given-month-day
+                                current-date
+                                (slot-ref competition 'start-month)
+                                (slot-ref competition 'start-day))
+                            0))
                     (when
                         (<
                             (date-- next-season-start current-date)
                             (* 3 30 24 3600))
                         (create-comp-instance-and-schedule-league
                             db
-                            (date-year next-season-start)
+                            next-season-start
                             competition country)))
                 (query-results db '<competition>
                     (lambda (r)
