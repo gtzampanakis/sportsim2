@@ -439,7 +439,6 @@
                         '<competition-instance-team>
                         'competition-instance)
                     competition-instance))))
-    (d 'goobar (length teams))
     (define schedule-days (gen-round-robin (length teams)))
     (for-each
         (lambda (day dayi)
@@ -548,8 +547,25 @@
                         (equal? (col-spec r '<competition> 'name) "League")))))
         (query-results db '<country>)))
 
+(define (play-match db match)
+    (d "Playing match" match))
+
+(define (find-matches-to-play db current-date)
+    (define matches
+        (query-results db
+            '<match>
+            (lambda (r)
+                (equal?
+                    (col-spec r '<match> 'datetime)
+                    current-date))))
+    (for-each
+        (lambda (match)
+            (play-match db match))
+        matches))
+
 (define (do-day db current-date)
-    (find-leagues-to-schedule db current-date))
+    (find-leagues-to-schedule db current-date)
+    (find-matches-to-play db current-date))
 
 (define (main)
     (define db (make-db))
