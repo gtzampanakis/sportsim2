@@ -400,6 +400,33 @@
                 (map (lambda (match) (reverse match)) day-pairs))
             first-round-days)))
 
+(define (
+        get-teams-for-new-competition-instance
+        db country last-competition-instance-result-set-row)
+    (if (null? last-competition-instance-result-set-row)
+        (map
+            (lambda (result-set-row)
+                (assoc-ref result-set-row '<team>))
+            (query-results db
+                '<team>
+                (lambda (r)
+                    (equal?
+                        (col-spec r '<team> 'country)
+                        country))))
+        (map
+            (lambda (result-set-row)
+                (assoc-ref result-set-row '<team>))
+            (query-results db
+                (list '<competition-instance-team> '<team>)
+                (lambda (r)
+                    (equal?
+                        (col-spec r
+                            '<competition-instance-team>
+                            'competition-instance)
+                        (assoc-ref
+                            last-competition-instance-result-set-row
+                            '<competition-instance>)))))))
+
 (define (create-comp-instance-and-schedule-league
                         db season competition country)
     (define existing
@@ -440,30 +467,9 @@
                             (equal?
                                 (col-spec r '<competition-instance> 'competition)
                                 competition)))))
-            (teams
-                (if (null? last-competition-instance-result-set-row)
-                    (map
-                        (lambda (result-set-row)
-                            (assoc-ref result-set-row '<team>))
-                        (query-results db
-                            '<team>
-                            (lambda (r)
-                                (equal?
-                                    (col-spec r '<team> 'country)
-                                    country))))
-                    (map
-                        (lambda (result-set-row)
-                            (assoc-ref result-set-row '<team>))
-                        (query-results db
-                            (list '<competition-instance-team> '<team>)
-                            (lambda (r)
-                                (equal?
-                                    (col-spec r
-                                        '<competition-instance-team>
-                                        'competition-instance)
-                                    (assoc-ref
-                                        last-competition-instance-result-set-row
-                                        '<competition-instance>))))))))
+            (teams (
+                get-teams-for-new-competition-instance
+                db country last-competition-instance-result-set-row)))
             (d 'foobar country (length teams))
             (db-insert-rec db new-competition-instance)
             (for-each
