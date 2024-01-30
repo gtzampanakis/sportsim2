@@ -157,8 +157,11 @@
             string-append
             (map symbol->string symbols))))
 
-(define (col-spec result-set-row alias col)
-    (slot-ref (assoc-ref result-set-row alias) col))
+(define-syntax query-filter-proc
+    (syntax-rules ()
+        ((_ r arg ...)
+            (lambda (r)
+                (and arg ...)))))
 
 (define (symbol-strip-first-and-last sym)
     (string->symbol
@@ -172,59 +175,13 @@
                     (symbol-strip-first-and-last table) '-set)))
         (slot-ref rec attr)))
 
-(define (-query-results db tables-in filter-proc order-by limit)
-    (define tables
-        (if (not (list? tables-in)) (list tables-in) tables-in))
-    (define result-set
-        (let loop ((tables tables) (first #t) (results '()))
-            (if (null? tables)
-                results
-                (if first
-                    (loop
-                        (cdr tables)
-                        #f
-                        (let ((table (car tables)))
-                            (map
-                                (lambda (rec)
-                                    (list (cons table rec)))
-                                (hash-ref db table))))
-                    (loop
-                        (cdr tables)
-                        #f
-                        (apply
-                            append
-                            (map
-                                (lambda (result)
-                                    (if
-                                        (slot-exists?
-                                            (cdar result)
-                                            (symbol-strip-first-and-last
-                                                (car tables)))
-                                        (list
-                                            (cons
-                                                (cons
-                                                    (car tables)
-                                                    (slot-ref
-                                                        (cdar result)
-                                                        (symbol-strip-first-and-last
-                                                            (car tables))))
-                                                result))
-                                        (map
-                                            (lambda (set-element)
-                                                (cons
-                                                    (cons
-                                                        (car tables)
-                                                        set-element)
-                                                    result))
-                                            (rec-table-set
-                                                (cdar result)
-                                                (car tables)))))
-                                results)))))))
+(define (-query-results db table filter-proc order-by limit)
+    (define objs (hash-ref db table))
     (let (
             (filtered
                 (if filter-proc
-                    (filter filter-proc result-set)
-                    result-set)))
+                    (filter filter-proc objs)
+                    objs)))
         (let (
                 (ordered
                     (if order-by
@@ -289,13 +246,13 @@
 (define (init-player-contract db country)
     (define teams
         (query-results db '<team>
-            (lambda (r)
+            (query-filter-proc r
                 (equal?
-                    (col-spec r '<team> 'country) country))))
+                    (slot-ref r 'country) country))))
     (define players
         (query-results db '<player>
-            (lambda (r)
-                (equal? (col-spec r '<player> 'country) country))))
+            (query-filter-proc r
+                (equal? (slot-ref r 'country) country))))
     (let loop ((teams teams) (players players))
         (unless (null? teams)
             (for-each
@@ -307,12 +264,12 @@
 (define (init-manager-contract db country)
     (define teams
         (query-results db '<team>
-            (lambda (r)
-                (equal? (col-spec r '<team> 'country) country))))
+            (query-filter-proc r
+                (equal? (slot-ref r 'country) country))))
     (define managers
         (query-results db '<manager>
-            (lambda (r)
-                (equal? (col-spec r '<manager> 'country) country))))
+            (query-filter-proc r
+                (equal? (slot-ref r 'country) country))))
     (let loop ((teams teams) (managers managers))
         (unless (null? teams)
             (for-each
@@ -401,43 +358,31 @@
             first-round-days)))
 
 (define (
-        get-teams-for-new-competition-instance
-        db country last-competition-instance-result-set-row)
-    (if (null? last-competition-instance-result-set-row)
-        (map
-            (lambda (result-set-row)
-                (assoc-ref result-set-row '<team>))
-            (query-results db
-                '<team>
-                (lambda (r)
-                    (equal?
-                        (col-spec r '<team> 'country)
-                        country))
-                #f
-                conf-n-teams-per-division))
-        (map
-            (lambda (result-set-row)
-                (assoc-ref result-set-row '<team>))
-            (query-results db
-                (list '<competition-instance-team> '<team>)
-                (lambda (r)
-                    (equal?
-                        (col-spec r
-                            '<competition-instance-team>
-                            'competition-instance)
-                        (assoc-ref
-                            last-competition-instance-result-set-row
-                            '<competition-instance>)))))))
+        teams-for-new-competition-instance
+        db country last-competition-instance)
+    (if (null? last-competition-instance)
+        (query-results db
+            '<team>
+            (query-filter-proc r
+                (equal?
+                    (slot-ref r 'country)
+                    country))
+            #f
+            conf-n-teams-per-division)
+        (query-results db
+            '<competition-instance-team>
+            (query-filter-proc r
+                (equal?
+                    (slot-ref r 'competition-instance)
+                    last-competition-instance)))))
 
 (define (schedule-league-season db first-date competition-instance)
     (define teams
         (query-results db
             '<competition-instance-team>
-            (lambda (r)
+            (query-filter-proc r
                 (equal?
-                    (col-spec r
-                        '<competition-instance-team>
-                        'competition-instance)
+                    (slot-ref r 'competition-instance)
                     competition-instance))))
     (define schedule-days (gen-round-robin (length teams)))
     (for-each
@@ -463,17 +408,16 @@
     (define existing
         (query-exists db
             '<competition-instance>
-            (lambda (r)
-                (and
-                    (equal?
-                        (col-spec r '<competition-instance> 'season)
-                        season)
-                    (equal?
-                        (col-spec r '<competition-instance> 'country)
-                        country)
-                    (equal?
-                        (col-spec r '<competition-instance> 'competition)
-                        competition)))))
+            (query-filter-proc r
+                (equal?
+                    (slot-ref r 'season)
+                    season)
+                (equal?
+                    (slot-ref r 'country)
+                    country)
+                (equal?
+                    (slot-ref r 'competition)
+                    competition))))
     (unless existing
         ; Find previous <competition-instance-team> records and copy them to
         ; this season (promotion and relegation not yet implemented).
@@ -484,23 +428,23 @@
                     #:season season
                     #:country country
                     #:competition competition))
-            (last-competition-instance-result-set-row
+            (last-competition-instance
                 (query-first db
                     '<competition-instance>
-                    (lambda (r)
+                    (query-filter-proc r
                         (and
                             (equal?
-                                (col-spec r '<competition-instance> 'season)
+                                (slot-ref r 'season)
                                 (1- season))
                             (equal?
-                                (col-spec r '<competition-instance> 'country)
+                                (slot-ref r 'country)
                                 country)
                             (equal?
-                                (col-spec r '<competition-instance> 'competition)
+                                (slot-ref r 'competition)
                                 competition)))))
             (teams (
-                get-teams-for-new-competition-instance
-                db country last-competition-instance-result-set-row)))
+                teams-for-new-competition-instance
+                db country last-competition-instance)))
             (db-insert-rec db new-competition-instance)
             (for-each
                 (lambda (team)
@@ -521,12 +465,9 @@
 
 (define (find-leagues-to-schedule db current-date)
     (for-each
-        (lambda (result-set-row)
-            (define country (assoc-ref result-set-row '<country>))
+        (lambda (country)
             (for-each
-                (lambda (result-set-row)
-                    (define competition
-                        (assoc-ref result-set-row '<competition>))
+                (lambda (competition)
                     (define next-season-start
                         (next-date-with-given-weekday
                             (next-date-with-given-month-day
@@ -543,24 +484,29 @@
                             next-season-start
                             competition country)))
                 (query-results db '<competition>
-                    (lambda (r)
-                        (equal? (col-spec r '<competition> 'name) "League")))))
+                    (query-filter-proc r
+                        (equal? (slot-ref r 'name) "League")))))
         (query-results db '<country>)))
 
 (define (play-match db match)
-    (d "Playing match" match))
+    (d "Playing match:" match)
+    (d "Home team:" (slot-ref match 'team-home))
+    (d "Away team:" (slot-ref match 'team-away))
+    )
 
 (define (find-matches-to-play db current-date)
     (define matches
         (query-results db
             '<match>
-            (lambda (r)
+            (query-filter-proc r
                 (equal?
-                    (col-spec r '<match> 'datetime)
-                    current-date))))
+                    (slot-ref r 'datetime)
+                    current-date)
+                (equal?
+                    (slot-ref r 'done)
+                    0))))
     (for-each
-        (lambda (match)
-            (play-match db match))
+        (lambda (match) (play-match db match))
         matches))
 
 (define (do-day db current-date)
