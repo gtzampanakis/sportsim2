@@ -159,8 +159,8 @@
 
 (define-syntax query-filter-proc
     (syntax-rules ()
-        ((_ r arg ...)
-            (lambda (r)
+        ((_ obj arg ...)
+            (lambda (obj)
                 (and arg ...)))))
 
 (define (symbol-strip-first-and-last sym)
@@ -246,13 +246,13 @@
 (define (init-player-contract db country)
     (define teams
         (query-results db '<team>
-            (query-filter-proc r
+            (query-filter-proc obj
                 (equal?
-                    (slot-ref r 'country) country))))
+                    (slot-ref obj 'country) country))))
     (define players
         (query-results db '<player>
-            (query-filter-proc r
-                (equal? (slot-ref r 'country) country))))
+            (query-filter-proc obj
+                (equal? (slot-ref obj 'country) country))))
     (let loop ((teams teams) (players players))
         (unless (null? teams)
             (for-each
@@ -264,12 +264,12 @@
 (define (init-manager-contract db country)
     (define teams
         (query-results db '<team>
-            (query-filter-proc r
-                (equal? (slot-ref r 'country) country))))
+            (query-filter-proc obj
+                (equal? (slot-ref obj 'country) country))))
     (define managers
         (query-results db '<manager>
-            (query-filter-proc r
-                (equal? (slot-ref r 'country) country))))
+            (query-filter-proc obj
+                (equal? (slot-ref obj 'country) country))))
     (let loop ((teams teams) (managers managers))
         (unless (null? teams)
             (for-each
@@ -363,26 +363,26 @@
     (if (null? last-competition-instance)
         (query-results db
             '<team>
-            (query-filter-proc r
+            (query-filter-proc obj
                 (equal?
-                    (slot-ref r 'country)
+                    (slot-ref obj 'country)
                     country))
             #f
             conf-n-teams-per-division)
         (query-results db
             '<competition-instance-team>
-            (query-filter-proc r
+            (query-filter-proc obj
                 (equal?
-                    (slot-ref r 'competition-instance)
+                    (slot-ref obj 'competition-instance)
                     last-competition-instance)))))
 
 (define (schedule-league-season db first-date competition-instance)
     (define teams
         (query-results db
             '<competition-instance-team>
-            (query-filter-proc r
+            (query-filter-proc obj
                 (equal?
-                    (slot-ref r 'competition-instance)
+                    (slot-ref obj 'competition-instance)
                     competition-instance))))
     (define schedule-days (gen-round-robin (length teams)))
     (for-each
@@ -408,15 +408,15 @@
     (define existing
         (query-exists db
             '<competition-instance>
-            (query-filter-proc r
+            (query-filter-proc obj
                 (equal?
-                    (slot-ref r 'season)
+                    (slot-ref obj 'season)
                     season)
                 (equal?
-                    (slot-ref r 'country)
+                    (slot-ref obj 'country)
                     country)
                 (equal?
-                    (slot-ref r 'competition)
+                    (slot-ref obj 'competition)
                     competition))))
     (unless existing
         ; Find previous <competition-instance-team> records and copy them to
@@ -431,16 +431,16 @@
             (last-competition-instance
                 (query-first db
                     '<competition-instance>
-                    (query-filter-proc r
+                    (query-filter-proc obj
                         (and
                             (equal?
-                                (slot-ref r 'season)
+                                (slot-ref obj 'season)
                                 (1- season))
                             (equal?
-                                (slot-ref r 'country)
+                                (slot-ref obj 'country)
                                 country)
                             (equal?
-                                (slot-ref r 'competition)
+                                (slot-ref obj 'competition)
                                 competition)))))
             (teams (
                 teams-for-new-competition-instance
@@ -484,8 +484,8 @@
                             next-season-start
                             competition country)))
                 (query-results db '<competition>
-                    (query-filter-proc r
-                        (equal? (slot-ref r 'name) "League")))))
+                    (query-filter-proc obj
+                        (equal? (slot-ref obj 'name) "League")))))
         (query-results db '<country>)))
 
 (define (play-match db match)
@@ -498,12 +498,12 @@
     (define matches
         (query-results db
             '<match>
-            (query-filter-proc r
+            (query-filter-proc obj
                 (equal?
-                    (slot-ref r 'datetime)
+                    (slot-ref obj 'datetime)
                     current-date)
                 (equal?
-                    (slot-ref r 'done)
+                    (slot-ref obj 'done)
                     0))))
     (for-each
         (lambda (match) (play-match db match))
