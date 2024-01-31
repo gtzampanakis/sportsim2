@@ -35,6 +35,20 @@
     (name #:init-keyword #:name)
     (country #:init-keyword #:country))
 
+(define-class <attr> (<rec>)
+    (date-start #:init-keyword #:date-start)
+    (date-end #:init-keyword #:date-end))
+
+(define-class <player-attr> (<attr>)
+    (player #:init-keyword #:player)
+    (att #:init-keyword #:att)
+    (def #:init-keyword #:def)
+    (vel #:init-keyword #:vel))
+
+(define-class <manager-attr> (<attr>)
+    (manager #:init-keyword #:manager)
+    (jud #:init-keyword #:jud))
+
 (define-class <manager> (<rec>)
     (name #:init-keyword #:name)
     (country #:init-keyword #:country))
@@ -137,6 +151,14 @@
                         (make <player>
                             #:id (get-id))))
                 (db-insert-rec db player)
+                (db-insert-rec db
+                    (make <player-attr>
+                        #:player player
+                        #:date-start conf-sim-start-date
+                        #:date-end (add-days conf-sim-start-date (* 7 4))
+                        #:att 1.0
+                        #:def 1.0
+                        #:vel 1.0))
                 (connect player country 'country 'player-set)))
         (range conf-n-players-per-country)))
 
@@ -148,6 +170,12 @@
                         (make <manager>
                             #:id (get-id))))
                 (db-insert-rec db manager)
+                (db-insert-rec db
+                    (make <manager-attr>
+                        #:manager manager
+                        #:date-start conf-sim-start-date
+                        #:date-end (add-days conf-sim-start-date (* 7 4))
+                        #:jud 1.0))
                 (connect manager country 'country 'manager-set)))
         (range conf-n-managers-per-country)))
 
@@ -392,8 +420,14 @@
                     (define match
                         (make <match>
                             #:id (get-id)
-                            #:team-home (list-ref teams (car match-teams))
-                            #:team-away (list-ref teams (cadr match-teams))
+                            #:team-home
+                                (slot-ref
+                                    (list-ref teams (car match-teams))
+                                    'team)
+                            #:team-away
+                                (slot-ref
+                                    (list-ref teams (cadr match-teams))
+                                    'team)
                             #:done 0
                             #:datetime (add-days first-date (* dayi 7))
                             #:competition-instance competition-instance))
@@ -488,11 +522,18 @@
                         (equal? (slot-ref obj 'name) "League")))))
         (query-results db '<country>)))
 
+(define (get-starters db match team)
+    5)
+
 (define (play-match db match)
     (d "Playing match:" match)
     (d "Home team:" (slot-ref match 'team-home))
     (d "Away team:" (slot-ref match 'team-away))
-    )
+    (define team-home (slot-ref match 'team-home))
+    (define team-away (slot-ref match 'team-away))
+    (define team-home-starters (get-starters db match team-home))
+    (define team-away-starters (get-starters db match team-away))
+    5)
 
 (define (find-matches-to-play db current-date)
     (define matches
