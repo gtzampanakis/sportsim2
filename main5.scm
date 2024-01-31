@@ -14,6 +14,7 @@
 (define conf-n-teams-per-country 40)
 (define conf-n-teams-per-division 14)
 (define conf-n-players-per-team 22)
+(define conf-n-players-in-match 11)
 (define conf-n-managers-per-team 1)
 (define conf-n-players-per-country 2000)
 (define conf-n-managers-per-country 200)
@@ -109,7 +110,9 @@
             <competition>
             <competition-instance>
             <competition-instance-team>
-            <match>)))
+            <match>
+            <player-attr>
+            <manager-attr>)))
 
 (define (make-db)
     (define db (make-hash-table))
@@ -155,7 +158,7 @@
                     (make <player-attr>
                         #:player player
                         #:date-start conf-sim-start-date
-                        #:date-end (add-days conf-sim-start-date (* 7 4))
+                        #:date-end (add-days conf-sim-start-date (* 7 52 10))
                         #:att 1.0
                         #:def 1.0
                         #:vel 1.0))
@@ -179,29 +182,11 @@
                 (connect manager country 'country 'manager-set)))
         (range conf-n-managers-per-country)))
 
-(define (symbol-append . symbols)
-    (string->symbol
-        (apply
-            string-append
-            (map symbol->string symbols))))
-
 (define-syntax query-filter-proc
     (syntax-rules ()
         ((_ obj arg ...)
             (lambda (obj)
                 (and arg ...)))))
-
-(define (symbol-strip-first-and-last sym)
-    (string->symbol
-        (let ((str (symbol->string sym)))
-            (substring str 1 (1- (string-length str))))))
-
-(define (rec-table-set rec table)
-    (let (
-            (attr
-                (symbol-append
-                    (symbol-strip-first-and-last table) '-set)))
-        (slot-ref rec attr)))
 
 (define (-query-results db table filter-proc order-by limit)
     (define objs (hash-ref db table))
@@ -522,13 +507,49 @@
                         (equal? (slot-ref obj 'name) "League")))))
         (query-results db '<country>)))
 
+(define (team-players db team datetime)
+    (define contracts
+        (query-results db '<player-contract>
+            (query-filter-proc obj
+                (equal? (slot-ref obj 'team) team)
+                (equal? (slot-ref obj 'status) 'signed)
+                (date>=? datetime (slot-ref obj 'date-start))
+                (date<? datetime (slot-ref obj 'date-end)))))
+    (map
+        (lambda (contract)
+            (slot-ref contract 'player))
+        contracts))
+
+(define (player-attr db player date)
+    (query-first db '<player-attr>
+        (query-filter-proc obj
+            (equal? (slot-ref obj 'player) player)
+            (date>=? date (slot-ref obj 'date-start))
+            (date<? date (slot-ref obj 'date-end)))))
+
 (define (get-starters db match team)
-    5)
+    (define match-datetime (slot-ref match 'datetime))
+    (define all-players (team-players db team match-datetime))
+    (define sorted
+        (sort all-players
+            (lambda (p1 p2)
+                (let (
+                        (p1-attr (player-attr db p1 match-datetime))
+                        (p2-attr (player-attr db p2 match-datetime)))
+                    (>
+                        (+
+                            (slot-ref p1-attr 'att)
+                            (slot-ref p1-attr 'def))
+                        (+
+                            (slot-ref p2-attr 'att)
+                            (slot-ref p2-attr 'def)))))))
+    (take-n-or-fewer sorted conf-n-players-in-match))
 
 (define (play-match db match)
     (d "Playing match:" match)
     (d "Home team:" (slot-ref match 'team-home))
     (d "Away team:" (slot-ref match 'team-away))
+    (define match-datetime (slot-ref match 'datetime))
     (define team-home (slot-ref match 'team-home))
     (define team-away (slot-ref match 'team-away))
     (define team-home-starters (get-starters db match team-home))
