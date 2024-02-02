@@ -2,6 +2,7 @@
 (use-modules (srfi srfi-19))
 (use-modules (ice-9 match))
 (use-modules (date))
+(use-modules (math))
 (use-modules (oop goops))
 (use-modules (oop goops describe))
 (use-modules (util))
@@ -15,9 +16,13 @@
 (define conf-n-teams-per-division 14)
 (define conf-n-players-per-team 22)
 (define conf-n-players-in-match 11)
+(define conf-n-min-players-to-not-forfeit 11)
 (define conf-n-managers-per-team 1)
 (define conf-n-players-per-country 2000)
 (define conf-n-managers-per-country 200)
+
+(define r 0.0075)
+(define h 1.10)
 
 (define-class <rec> ()
     (id #:init-keyword #:id))
@@ -30,15 +35,21 @@
 
 (define-class <team> (<rec>)
     (name #:init-keyword #:name)
-    (country #:init-keyword #:country))
+    (country #:init-keyword #:country)
+    (team-finances-set #:init-keyword #:team-finances-set #:init-thunk list))
+
+(define-class <team-finances> (<rec>)
+    (team #:init-keyword #:team)
+    (balance #:init-keyword #:balance)
+    (date-start #:init-keyword #:date-start))
 
 (define-class <player> (<rec>)
     (name #:init-keyword #:name)
-    (country #:init-keyword #:country))
+    (country #:init-keyword #:country)
+    (player-attr-set #:init-keyword #:player-attr-set #:init-thunk list))
 
 (define-class <attr> (<rec>)
-    (date-start #:init-keyword #:date-start)
-    (date-end #:init-keyword #:date-end))
+    (date-start #:init-keyword #:date-start))
 
 (define-class <player-attr> (<attr>)
     (player #:init-keyword #:player)
@@ -91,6 +102,7 @@
     (score-home #:init-keyword #:score-home)
     (score-away #:init-keyword #:score-away)
     (done #:init-keyword #:done)
+    (abandoned #:init-keyword #:abandoned)
     (datetime #:init-keyword #:datetime)
     (competition-instance #:init-keyword #:competition-instance))
 
@@ -103,6 +115,7 @@
         (list
             <country>
             <team>
+            <team-finances>
             <player>
             <manager>
             <player-contract>
@@ -141,9 +154,15 @@
             (let* (
                     (team
                         (make <team>
-                            #:id (get-id))))
+                            #:id (get-id)))
+                    (team-finances
+                        (make <team-finances>
+                            #:id (get-id)
+                            #:balance (* 1 1000 1000)
+                            #:date-start conf-sim-start-date)))
                 (db-insert-rec db team)
-                (connect team country 'country 'team-set)))
+                (connect team country 'country 'team-set)
+                (connect team-finances team 'team 'team-finances-set)))
         (range conf-n-teams-per-country)))
 
 (define (init-player db country)
@@ -152,17 +171,17 @@
             (let* (
                     (player
                         (make <player>
-                            #:id (get-id))))
+                            #:id (get-id)))
+                    (player-attr
+                        (make <player-attr>
+                            #:date-start conf-sim-start-date
+                            #:att 1.0
+                            #:def 1.0
+                            #:vel 1.0)))
                 (db-insert-rec db player)
-                (db-insert-rec db
-                    (make <player-attr>
-                        #:player player
-                        #:date-start conf-sim-start-date
-                        #:date-end (add-days conf-sim-start-date (* 7 52 10))
-                        #:att 1.0
-                        #:def 1.0
-                        #:vel 1.0))
-                (connect player country 'country 'player-set)))
+                (db-insert-rec db player-attr)
+                (connect player country 'country 'player-set)
+                (connect player-attr player 'player 'player-attr-set)))
         (range conf-n-players-per-country)))
 
 (define (init-manager db country)
@@ -177,7 +196,6 @@
                     (make <manager-attr>
                         #:manager manager
                         #:date-start conf-sim-start-date
-                        #:date-end (add-days conf-sim-start-date (* 7 4))
                         #:jud 1.0))
                 (connect manager country 'country 'manager-set)))
         (range conf-n-managers-per-country)))
@@ -382,12 +400,15 @@
                     country))
             #f
             conf-n-teams-per-division)
-        (query-results db
-            '<competition-instance-team>
-            (query-filter-proc obj
-                (equal?
-                    (slot-ref obj 'competition-instance)
-                    last-competition-instance)))))
+        (map
+            (lambda (cit)
+                (slot-ref cit 'team))
+            (query-results db
+                '<competition-instance-team>
+                (query-filter-proc obj
+                    (equal?
+                        (slot-ref obj 'competition-instance)
+                        last-competition-instance))))))
 
 (define (schedule-league-season db first-date competition-instance)
     (define teams
@@ -507,35 +528,43 @@
                         (equal? (slot-ref obj 'name) "League")))))
         (query-results db '<country>)))
 
-(define (team-players db team datetime)
+(define (get-team-players db team datetime)
     (define contracts
         (query-results db '<player-contract>
             (query-filter-proc obj
                 (equal? (slot-ref obj 'team) team)
                 (equal? (slot-ref obj 'status) 'signed)
                 (date>=? datetime (slot-ref obj 'date-start))
-                (date<? datetime (slot-ref obj 'date-end)))))
+                (or
+                    (equal? (slot-ref obj 'date-end) #f)
+                    (date<? datetime (slot-ref obj 'date-end))))))
     (map
         (lambda (contract)
             (slot-ref contract 'player))
         contracts))
 
-(define (player-attr db player date)
-    (query-first db '<player-attr>
-        (query-filter-proc obj
-            (equal? (slot-ref obj 'player) player)
-            (date>=? date (slot-ref obj 'date-start))
-            (date<? date (slot-ref obj 'date-end)))))
+(define (get-player-attr-obj db player)
+    (car (slot-ref player 'player-attr-set)))
+
+(define (get-player-attr db player attr)
+    (slot-ref (get-player-attr-obj db player) attr))
+
+(define (get-player-collection-attr db players attr)
+    (sum
+        (map
+            (lambda (p)
+                (get-player-attr db p attr))
+            players)))
 
 (define (get-starters db match team)
     (define match-datetime (slot-ref match 'datetime))
-    (define all-players (team-players db team match-datetime))
+    (define all-players (get-team-players db team match-datetime))
     (define sorted
         (sort all-players
             (lambda (p1 p2)
                 (let (
-                        (p1-attr (player-attr db p1 match-datetime))
-                        (p2-attr (player-attr db p2 match-datetime)))
+                        (p1-attr (get-player-attr-obj db p1))
+                        (p2-attr (get-player-attr-obj db p2)))
                     (>
                         (+
                             (slot-ref p1-attr 'att)
@@ -546,15 +575,52 @@
     (take-n-or-fewer sorted conf-n-players-in-match))
 
 (define (play-match db match)
-    (d "Playing match:" match)
-    (d "Home team:" (slot-ref match 'team-home))
-    (d "Away team:" (slot-ref match 'team-away))
-    (define match-datetime (slot-ref match 'datetime))
     (define team-home (slot-ref match 'team-home))
     (define team-away (slot-ref match 'team-away))
     (define team-home-starters (get-starters db match team-home))
     (define team-away-starters (get-starters db match team-away))
-    5)
+    (define n-home-starters (length team-home-starters))
+    (define n-away-starters (length team-away-starters))
+    (cond
+        ((and (>= n-home-starters conf-n-min-players-to-not-forfeit)
+              (>= n-away-starters conf-n-min-players-to-not-forfeit))
+            (let* (
+                    (team-home-att
+                        (get-player-collection-attr
+                            db team-home-starters 'att))
+                    (team-away-att
+                        (get-player-collection-attr
+                            db team-away-starters 'att))
+                    (team-home-def
+                        (get-player-collection-attr
+                            db team-home-starters 'def))
+                    (team-away-def
+                        (get-player-collection-attr
+                            db team-away-starters 'def))
+                    (team-home-mean-score
+                        (* h r team-home-att team-away-def))
+                    (team-away-mean-score
+                        (* 1 r team-away-att team-home-def))
+                    (team-home-score
+                        (rand-poisson team-home-mean-score *random-state*))
+                    (team-away-score
+                        (rand-poisson team-away-mean-score *random-state*)))
+                (slot-set! match 'score-home team-home-score)
+                (slot-set! match 'score-away team-away-score)
+                (slot-set! match 'done 1)))
+        ((and (>= n-home-starters conf-n-min-players-to-not-forfeit)
+              (< n-away-starters conf-n-min-players-to-not-forfeit))
+            (slot-set! match 'score-home 3)
+            (slot-set! match 'score-away 0)
+            (slot-set! match 'done 1))
+        ((and (< n-home-starters conf-n-min-players-to-not-forfeit)
+              (>= n-away-starters conf-n-min-players-to-not-forfeit))
+            (slot-set! match 'score-home 0)
+            (slot-set! match 'score-away 3)
+            (slot-set! match 'done 1))
+        ((and (< n-home-starters conf-n-min-players-to-not-forfeit)
+              (< n-away-starters conf-n-min-players-to-not-forfeit))
+            (slot-set! match 'abandoned 1))))
 
 (define (find-matches-to-play db current-date)
     (define matches
@@ -571,7 +637,41 @@
         (lambda (match) (play-match db match))
         matches))
 
+(define (pay-wage db team amount date)
+    (define all-finances (slot-ref team 'team-finances-set))
+    (define current-finances (car all-finances))
+    (define current-balance (slot-ref current-finances 'balance))
+    (d current-balance)
+    (if (>= current-balance amount)
+        (let (
+                (new-finances
+                    (make <team-finances>
+                        #:team team
+                        #:balance (- current-balance amount)
+                        #:date-start date)))
+            (slot-set! team 'team-finances-set
+                (cons new-finances all-finances))
+            #t)
+        #f))
+
+(define (pay-wages db current-date)
+    (define player-contracts
+        (query-results db
+            '<player-contract>
+            (query-filter-proc obj
+                (equal? (slot-ref obj 'status) 'signed))))
+    (for-each
+        (lambda (player-contract)
+            (let* (
+                    (team (slot-ref player-contract 'team))
+                    (wage (slot-ref player-contract 'wage)))
+                (unless (pay-wage db team wage current-date)
+                    (slot-set! player-contract 'status 'terminated))))
+        player-contracts))
+
 (define (do-day db current-date)
+    (when (= (date-week-day current-date) 1)
+        (pay-wages db current-date))
     (find-leagues-to-schedule db current-date)
     (find-matches-to-play db current-date))
 
