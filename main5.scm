@@ -620,7 +620,9 @@
             (slot-set! match 'done 1))
         ((and (< n-home-starters conf-n-min-players-to-not-forfeit)
               (< n-away-starters conf-n-min-players-to-not-forfeit))
-            (slot-set! match 'abandoned 1))))
+            (slot-set! match 'abandoned 1)))
+    (d "Played match:")
+    (describe match))
 
 (define (find-matches-to-play db current-date)
     (define matches
@@ -641,18 +643,20 @@
     (define all-finances (slot-ref team 'team-finances-set))
     (define current-finances (car all-finances))
     (define current-balance (slot-ref current-finances 'balance))
-    (d current-balance)
-    (if (>= current-balance amount)
-        (let (
-                (new-finances
-                    (make <team-finances>
-                        #:team team
-                        #:balance (- current-balance amount)
-                        #:date-start date)))
-            (slot-set! team 'team-finances-set
-                (cons new-finances all-finances))
-            #t)
-        #f))
+    (cond
+        ((>= current-balance amount)
+            (let (
+                    (new-finances
+                        (make <team-finances>
+                            #:team team
+                            #:balance (- current-balance amount)
+                            #:date-start date)))
+                (slot-set! team 'team-finances-set
+                    (cons new-finances all-finances))
+                #t))
+        (else
+            (d "Team" team "was unable to pay wages")
+            #f)))
 
 (define (pay-wages db current-date)
     (define player-contracts
